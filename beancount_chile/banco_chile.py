@@ -1,19 +1,18 @@
 """Beancount importer for Banco de Chile account statements."""
 
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
-from beancount.core import data, amount, flags
+from beancount.core import amount, data, flags
 from beancount.core.number import D
 from beangulp import Importer
 
 from beancount_chile.extractors.banco_chile_xls import (
-    BancoChileXLSExtractor,
     BancoChileTransaction,
+    BancoChileXLSExtractor,
 )
-from beancount_chile.helpers import normalize_payee, clean_narration
+from beancount_chile.helpers import clean_narration, normalize_payee
 
 
 class BancoChileImporter(Importer):
@@ -110,7 +109,9 @@ class BancoChileImporter(Importer):
         except Exception:
             return None
 
-    def extract(self, filepath: Path, existing: Optional[data.Entries] = None) -> data.Entries:
+    def extract(
+        self, filepath: Path, existing: Optional[data.Entries] = None
+    ) -> data.Entries:
         """
         Extract transactions from the file.
 

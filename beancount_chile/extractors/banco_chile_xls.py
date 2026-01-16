@@ -53,7 +53,9 @@ class BancoChileXLSExtractor:
         """Initialize the extractor."""
         pass
 
-    def extract(self, filepath: str) -> tuple[BancoChileMetadata, list[BancoChileTransaction]]:
+    def extract(
+        self, filepath: str
+    ) -> tuple[BancoChileMetadata, list[BancoChileTransaction]]:
         """
         Extract metadata and transactions from a Banco de Chile statement.
 
@@ -67,7 +69,7 @@ class BancoChileXLSExtractor:
             ValueError: If the file format is invalid
         """
         # Read the entire file without headers
-        df = pd.read_excel(filepath, header=None, engine='openpyxl')
+        df = pd.read_excel(filepath, header=None, engine="openpyxl")
 
         # Extract metadata
         metadata = self._extract_metadata(df)
@@ -101,8 +103,8 @@ class BancoChileXLSExtractor:
         currency_row = df[df[1] == "Moneda:"]
         if currency_row.empty:
             raise ValueError("Could not find currency information")
-        currency_text = str(currency_row.iloc[0, 2])
-        currency = "CLP"  # Default to CLP
+        # Always use CLP for Chilean pesos
+        currency = "CLP"
 
         # Extract balance information
         balance_header_row = df[df[1] == "Saldo Disponible"]

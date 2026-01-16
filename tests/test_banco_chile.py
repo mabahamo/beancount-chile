@@ -1,13 +1,13 @@
 """Tests for Banco de Chile importer."""
 
-import pytest
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from datetime import datetime
+
+import pytest
 
 from beancount_chile.banco_chile import BancoChileImporter
 from beancount_chile.extractors.banco_chile_xls import BancoChileXLSExtractor
-
 
 # Path to test fixture
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "banco_chile_cartola_sample.xls"

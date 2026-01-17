@@ -124,16 +124,16 @@ class TestExtractAccountHolderAndRut:
 
     def test_extract_holder_and_rut(self):
         """Test extracting account holder and RUT."""
-        text = "Sr(a). : JUAN PÉREZ GONZÁLEZ\nRUT : 12.345.678-9"
+        text = "Sr(a). : TEST USUARIO UNO\nRUT : 12.345.678-9"
         holder, rut = extract_account_holder_and_rut(text)
-        assert holder == "JUAN PÉREZ GONZÁLEZ"
+        assert holder == "TEST USUARIO UNO"
         assert rut == "12.345.678-9"
 
     def test_variations(self):
         """Test different formatting variations."""
-        text = "Sr(a): MARÍA GONZÁLEZ\nRUT: 98.765.432-1"
+        text = "Sr(a): TEST USUARIO DOS\nRUT: 98.765.432-1"
         holder, rut = extract_account_holder_and_rut(text)
-        assert "MARÍA GONZÁLEZ" in holder if holder else False
+        assert "TEST USUARIO DOS" in holder if holder else False
         assert rut == "98.765.432-1"
 
 
@@ -142,19 +142,19 @@ class TestParseTransactionLine:
 
     def test_simple_debit_transaction(self):
         """Test parsing a simple debit (TRASPASO A)."""
-        line = "10/01 TRASPASO A:Jorge Arias INTERNET 3.147.734 12.100.583"
+        line = "10/01 TRASPASO A:TEST USUARIO CUATRO INTERNET 3.147.734 12.100.583"
         txn = parse_transaction_line(line, 2025)
 
         assert txn is not None
         assert txn.date == datetime(2025, 1, 10)
-        assert "TRASPASO A:Jorge Arias INTERNET" in txn.description
+        assert "TRASPASO A:TEST USUARIO CUATRO INTERNET" in txn.description
         assert txn.debit == Decimal("3147734")
         assert txn.credit is None
         assert txn.balance == Decimal("12100583")
 
     def test_simple_credit_transaction(self):
         """Test parsing a simple credit (TRASPASO DE)."""
-        line = "02/01 TRASPASO DE:DANIELA DEL PILAR MONT INTERNET 75.000 100.000"
+        line = "02/01 TRASPASO DE:TEST USUARIO CINCO INTERNET 75.000 100.000"
         txn = parse_transaction_line(line, 2025)
 
         assert txn is not None
@@ -226,7 +226,7 @@ class TestBancoChilePDFExtractor:
         BANCO DE CHILE
         CARTOLA N° : 123
         N° DE CUENTA : 00-123-45678-90
-        Sr(a). : JUAN PÉREZ GONZÁLEZ
+        Sr(a). : TEST USUARIO UNO
         RUT : 12.345.678-9
         DESDE : 01/01/2025 HASTA : 31/01/2025
         SALDO INICIAL 10.000.000
@@ -234,8 +234,8 @@ class TestBancoChilePDFExtractor:
 
         transaction_text = """
         FECHA DESCRIPCION
-        02/01 TRASPASO DE:MARIA GONZALEZ INTERNET 500.000 10.500.000
-        05/01 TRASPASO A:PEDRO LOPEZ INTERNET 200.000 10.300.000
+        02/01 TRASPASO DE:TEST USUARIO DOS INTERNET 500.000 10.500.000
+        05/01 TRASPASO A:TEST USUARIO TRES INTERNET 200.000 10.300.000
         """
 
         last_page_text = """
@@ -263,7 +263,7 @@ class TestBancoChilePDFExtractor:
 
         # Verify metadata
         assert metadata.account_number == "00-123-45678-90"
-        assert metadata.account_holder == "JUAN PÉREZ GONZÁLEZ"
+        assert metadata.account_holder == "TEST USUARIO UNO"
         assert metadata.rut == "12.345.678-9"
         assert metadata.statement_date == datetime(2025, 1, 31)
         assert metadata.currency == "CLP"

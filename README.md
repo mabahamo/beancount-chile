@@ -285,41 +285,39 @@ CONFIG = [
 
 #### Example: Transaction Splitting (NEW)
 
-The categorizer can now return a list of tuples to split one transaction into multiple postings. This is useful for:
+The categorizer can now return a list of tuples to split one transaction into multiple postings with fixed amounts. This is useful for:
 - Splitting shared expenses across multiple categories
-- Allocating costs by percentage
+- Allocating specific amounts to different accounts
 - Handling transactions with multiple components
 
 ```python
 from decimal import Decimal
 
 def split_categorizer(date, payee, narration, amount, metadata):
-    """Split transactions across multiple categories."""
-    # Split grocery shopping 80% food / 20% household
+    """Split transactions into multiple fixed-amount postings."""
+    # Split grocery shopping between food and household supplies
     if "JUMBO" in payee.upper() or "UNIMARC" in payee.upper():
         # For checking account, debits are negative
-        # Split the amounts proportionally
         if amount < 0:  # Debit
             return [
-                ("Expenses:Groceries", -amount * Decimal("0.8")),
-                ("Expenses:Household", -amount * Decimal("0.2")),
+                ("Expenses:Groceries", Decimal("40000")),
+                ("Expenses:Household", Decimal("10000")),
             ]
 
-    # Split business meal: 70% meals / 30% entertainment
-    if "RESTAURANT" in narration.upper() and metadata.get("channel") == "Internet":
+    # Split pharmacy purchase between medicine and personal care
+    if "PHARMACY" in payee.upper():
         if amount < 0:
             return [
-                ("Expenses:Food:Restaurant", -amount * Decimal("0.7")),
-                ("Expenses:Entertainment", -amount * Decimal("0.3")),
+                ("Expenses:Health:Medicine", Decimal("25000")),
+                ("Expenses:Health:Personal", Decimal("8000")),
             ]
 
     # For credit cards, amounts are positive (increase liability)
-    # Split subscription service
+    # Split subscription service between personal and family
     if "NETFLIX" in payee.upper():
-        # Split 50/50 between personal and family
         return [
-            ("Expenses:Streaming:Personal", amount * Decimal("0.5")),
-            ("Expenses:Streaming:Family", amount * Decimal("0.5")),
+            ("Expenses:Streaming:Personal", Decimal("-6000")),
+            ("Expenses:Streaming:Family", Decimal("-6000")),
         ]
 
     # No split needed
@@ -338,14 +336,15 @@ CONFIG = [
 **Important Notes on Transaction Splitting:**
 
 1. **Amount Signs**:
-   - For checking accounts: debits are negative, credits are positive
-   - For credit cards: charges are positive (increase liability)
+   - For checking accounts: debits are negative, so split amounts should be positive
+   - For credit cards: charges are positive, so split amounts should be negative
+   - The split amounts balance the original transaction
 
 2. **Balance**: The sum of split amounts should balance the original transaction amount. Beancount will flag unbalanced transactions.
 
 3. **Flexible Splits**: You can split into any number of postings:
 ```python
-# Split into 3 categories
+# Split into 3 categories with fixed amounts
 return [
     ("Expenses:Groceries", Decimal("30000")),
     ("Expenses:Household", Decimal("15000")),
@@ -353,13 +352,14 @@ return [
 ]
 ```
 
-4. **Fixed Amounts**: You can also use fixed amounts instead of percentages:
+4. **Mixed Amounts**: You can combine fixed amounts with calculated remainders:
 ```python
-# Split with fixed amounts
+# Allocate fixed amount to one category, rest to another
 if "PHARMACY" in payee.upper():
+    medicine_amount = Decimal("15000")
     return [
-        ("Expenses:Health:Medicine", Decimal("15000")),  # Fixed amount
-        ("Expenses:Health:Personal", amount - Decimal("15000")),  # Remainder
+        ("Expenses:Health:Medicine", medicine_amount),
+        ("Expenses:Health:Personal", -amount - medicine_amount),  # Remainder
     ]
 ```
 

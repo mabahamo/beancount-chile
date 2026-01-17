@@ -123,6 +123,7 @@ class BankImporter(Importer):
 ### Implemented
 
 - ✅ **Banco de Chile** - XLS/XLSX cartola (account statements)
+- ✅ **Banco de Chile** - XLS/XLSX credit card statements (Facturado/No Facturado)
 
 ### Planned
 
@@ -160,6 +161,59 @@ Columns:
 - E: Cargos (Debits)
 - F: Abonos (Credits)
 - G: Saldo (Balance)
+
+### Banco de Chile Credit Card XLS Format
+
+**Facturado (Billed) Structure:**
+```
+Rows 1-7:   Empty
+Row 8:      Sr(a).: [Name]
+Row 9:      Rut: [RUT]
+Row 10:     Tipo de Tarjeta: [Card Type with last 4 digits]
+Row 11:     Estado: [Status]
+Row 13:     "Movimientos Facturados"
+Row 14:     Billing summary headers
+Row 15:     Billing summary values (total, minimum payment, dates)
+Row 17:     "Movimientos Nacionales"
+Row 18:     Transaction headers
+Row 19+:    Transactions
+```
+
+Facturado Columns:
+- B: Categoría (Category)
+- C: Fecha (Date)
+- D: Descripción (Description)
+- G: Cuotas (Installments)
+- H: Monto (Amount)
+
+**No Facturado (Unbilled) Structure:**
+```
+Rows 1-7:   Empty
+Row 8:      Sr(a).: [Name]
+Row 9:      Rut: [RUT]
+Row 10:     Tipo de Tarjeta: [Card Type with last 4 digits]
+Row 11:     Estado: [Status]
+Row 13:     "Saldos y Movimientos No Facturados al [Date]"
+Row 14:     Credit limit headers
+Row 15:     Credit limit values (available, used, total)
+Row 17:     "Movimientos Nacionales"
+Row 18:     Transaction headers
+Row 19+:    Transactions
+```
+
+No Facturado Columns:
+- B: Fecha (Date)
+- C: Tipo de Tarjeta (Card Type)
+- E: Descripción (Description)
+- G: Ciudad (City)
+- H: Cuotas (Installments)
+- K: Monto (Amount)
+
+**Key Differences:**
+- Facturado includes billing summary (total due, minimum payment, due date)
+- No Facturado includes credit limit information
+- Column layout differs between the two types
+- Facturado transactions are marked as cleared (*), No Facturado as pending (!)
 
 ## Adding a New Bank
 
@@ -301,7 +355,7 @@ ruff check .
 
 - [ ] Add PDF parsing support for banks that only provide PDF statements
 - [ ] Implement CSV importers for banks with CSV exports
-- [ ] Add support for credit card statements
+- [x] Add support for credit card statements (Banco de Chile done)
 - [ ] Implement automatic payee categorization
 - [ ] Add CLI tool for easier usage
 - [ ] Create web interface for non-technical users

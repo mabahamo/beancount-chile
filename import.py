@@ -1,7 +1,8 @@
 """Import configuration for Banco de Chile statements."""
 
-from beancount_chile import BancoChileCreditImporter, BancoChileImporter
 from beangulp import Ingest
+
+from beancount_chile import BancoChileCreditImporter, BancoChileImporter
 
 importers = (
     # Checking account (supports XLS, XLSX, and PDF cartola files)

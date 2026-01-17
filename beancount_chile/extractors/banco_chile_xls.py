@@ -53,6 +53,27 @@ class BancoChileXLSExtractor:
         """Initialize the extractor."""
         pass
 
+    def _detect_excel_engine(self, filepath: str) -> str:
+        """
+        Detect the appropriate pandas engine based on file content.
+
+        Args:
+            filepath: Path to the Excel file
+
+        Returns:
+            Engine name: "xlrd" for old XLS, "openpyxl" for XLSX
+        """
+        # Read the first 4 bytes to check the file signature
+        with open(filepath, "rb") as f:
+            signature = f.read(4)
+
+        # XLSX files are ZIP files (start with 'PK')
+        # Old XLS files start with different signatures (e.g., 0xD0CF for OLE2)
+        if signature[:2] == b"PK":
+            return "openpyxl"
+        else:
+            return "xlrd"
+
     def extract(
         self, filepath: str
     ) -> tuple[BancoChileMetadata, list[BancoChileTransaction]]:
@@ -69,8 +90,8 @@ class BancoChileXLSExtractor:
             ValueError: If the file format is invalid
         """
         # Read the entire file without headers
-        # Auto-detect engine based on file extension
-        engine = "xlrd" if filepath.lower().endswith(".xls") else "openpyxl"
+        # Auto-detect engine based on file content (not extension)
+        engine = self._detect_excel_engine(filepath)
         df = pd.read_excel(filepath, header=None, engine=engine)
 
         # Extract metadata

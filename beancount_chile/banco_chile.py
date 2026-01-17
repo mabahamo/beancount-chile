@@ -190,13 +190,15 @@ class BancoChileImporter(Importer):
         entries = []
 
         # Add a balance assertion at the end of the statement
-        if transactions:
-            last_transaction = transactions[-1]
+        # Use metadata.accounting_balance (SALDO FINAL) instead of
+        # last_transaction.balance which can be 0 for PDF files
+        if metadata.accounting_balance:
+            balance_amount = D(str(metadata.accounting_balance))
             balance_entry = data.Balance(
                 meta=data.new_metadata(str(filepath), 0),
-                date=last_transaction.date.date(),
+                date=metadata.statement_date.date(),
                 account=self.account_name,
-                amount=amount.Amount(D(str(last_transaction.balance)), self.currency),
+                amount=amount.Amount(balance_amount, self.currency),
                 tolerance=None,
                 diff_amount=None,
             )

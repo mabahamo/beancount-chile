@@ -58,6 +58,9 @@ class BancoChileImporter(Importer):
         Returns:
             Extractor instance or None if unsupported format
         """
+        # Convert to Path if string (beangulp may pass strings)
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
         suffix = filepath.suffix.lower()
         if suffix in [".xls", ".xlsx"]:
             return self.xls_extractor

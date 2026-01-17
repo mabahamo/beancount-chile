@@ -66,6 +66,84 @@ def parse_chilean_date(date_str: str, year: int) -> Optional[str]:
         return None
 
 
+def extract_channel_from_description(description: str) -> tuple[str, str]:
+    """
+    Extract channel information from the end of the description.
+
+    In PDF cartola statements, the channel (e.g., INTERNET, CENTRAL) is
+    embedded at the end of the transaction description, unlike XLS files
+    where it's in a separate column.
+
+    Common channels:
+    - INTERNET: Online banking
+    - CENTRAL: Central branch or branch office
+    - OF. [branch name]: Specific branch office
+    - Cajero Automático: ATM
+    - Sucursal: Branch
+
+    Args:
+        description: Original transaction description
+
+    Returns:
+        Tuple of (cleaned_description, channel)
+        If no channel is found, returns (description, "")
+
+    Examples:
+        "TRASPASO A:Jorge Arias INTERNET" -> ("TRASPASO A:Jorge Arias", "INTERNET")
+        "PAGO EN SII.CL* CENTRAL" -> ("PAGO EN SII.CL*", "CENTRAL")
+        "PAGO:Devolucion 0764749650" -> ("PAGO:Devolucion 0764749650", "")
+    """
+    if not description or not description.strip():
+        return description, ""
+
+    # Split description into words
+    words = description.split()
+    if not words:
+        return description, ""
+
+    last_word = words[-1]
+
+    # Known channel keywords (case-insensitive, but typically uppercase in PDFs)
+    # Also check for common patterns like "OF. [branch]" where "OF." would be
+    # second to last
+    channel_keywords = {
+        "INTERNET",
+        "CENTRAL",
+        "SUCURSAL",
+        "CAJERO",  # Usually "Cajero Automático" but might appear as just CAJERO
+    }
+
+    # Check if last word is a known channel
+    if last_word.upper() in channel_keywords:
+        # Remove channel from description
+        cleaned_description = " ".join(words[:-1])
+        return cleaned_description, last_word
+
+    # Check if last word is a number (likely a folio, not a channel)
+    if last_word.isdigit() or (last_word.replace(".", "").isdigit()):
+        # Not a channel
+        return description, ""
+
+    # Check for "Cajero Automático" pattern (two words)
+    if (
+        len(words) >= 2
+        and words[-2].upper() == "CAJERO"
+        and words[-1].upper() == "AUTOMÁTICO"
+    ):
+        cleaned_description = " ".join(words[:-2])
+        return cleaned_description, "Cajero Automático"
+
+    # Check for "OF. [branch]" pattern
+    if len(words) >= 2 and words[-2].upper().startswith("OF"):
+        # This is a branch office pattern
+        cleaned_description = " ".join(words[:-2])
+        channel = " ".join(words[-2:])
+        return cleaned_description, channel
+
+    # No known channel found
+    return description, ""
+
+
 def extract_date_range(text: str) -> tuple[Optional[str], Optional[str]]:
     """
     Extract date range from cartola header.
@@ -207,10 +285,14 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
             else Decimal("0")
         )
 
+        # Extract channel from line
+        # The line format may have channel info embedded
+        desc_cleaned, channel = extract_channel_from_description(line)
+
         return BancoChileTransaction(
             date=date,
             description="DEP.CHEQ.OTROS BANCOS",
-            channel="",
+            channel=channel,
             debit=None,
             credit=amount,
             balance=balance,
@@ -237,10 +319,13 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
             else Decimal("0")
         )
 
+        # Extract channel from line
+        desc_cleaned, channel = extract_channel_from_description(line)
+
         return BancoChileTransaction(
             date=date,
             description="CHEQUE DEPOSITADO DEVUELTO",
-            channel="",
+            channel=channel,
             debit=amount,
             credit=None,
             balance=balance,
@@ -295,6 +380,9 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
             else:
                 filtered_numbers.append(num)
         numbers = filtered_numbers
+
+    # Extract channel from description and clean it
+    description, channel = extract_channel_from_description(description)
 
     # Determine which numbers are debit/credit/balance
     # The format from the PDF is: [DEBIT or CREDIT] BALANCE
@@ -373,7 +461,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
     return BancoChileTransaction(
         date=date,
         description=description,
-        channel="",  # PDF doesn't have channel info
+        channel=channel,
         debit=debit,
         credit=credit,
         balance=balance,

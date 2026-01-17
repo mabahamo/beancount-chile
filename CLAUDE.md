@@ -122,7 +122,7 @@ class BankImporter(Importer):
 
 ### Implemented
 
-- ✅ **Banco de Chile** - XLS/XLSX cartola (account statements)
+- ✅ **Banco de Chile** - XLS/XLSX/PDF cartola (account statements)
 - ✅ **Banco de Chile** - XLS/XLSX credit card statements (Facturado/No Facturado)
 
 ### Planned
@@ -214,6 +214,98 @@ No Facturado Columns:
 - No Facturado includes credit limit information
 - Column layout differs between the two types
 - Facturado transactions are marked as cleared (*), No Facturado as pending (!)
+
+### Banco de Chile PDF Format (Cartola)
+
+PDF cartola statements contain the same information as XLS files but require text extraction and parsing.
+
+**PDF Structure:**
+```
+Header section (varies by page):
+  - BANCO DE CHILE
+  - CARTOLA N° : [number]
+  - N° DE CUENTA : [account number]
+  - Sr(a). : [Name]
+  - RUT : [RUT]
+  - DESDE : DD/MM/YYYY HASTA : DD/MM/YYYY
+  - SALDO INICIAL [amount]
+
+Transaction section:
+  DD/MM DESCRIPTION [DETAILS] [AMOUNT] [BALANCE]
+
+Footer section:
+  SALDO FINAL [amount]
+```
+
+**Transaction Line Formats:**
+
+1. **Standard Transfer (Debit)**:
+   ```
+   10/01 TRASPASO A:Jorge Arias INTERNET 3.147.734 12.100.583
+   ```
+   - Date: 10/01
+   - Description: TRASPASO A:Jorge Arias INTERNET
+   - Amount: 3.147.734 (debit)
+   - Balance: 12.100.583
+
+2. **Standard Transfer (Credit)**:
+   ```
+   02/01 TRASPASO DE:DANIELA DEL PILAR MONT INTERNET 75.000 100.000
+   ```
+   - Date: 02/01
+   - Description: TRASPASO DE:DANIELA DEL PILAR MONT INTERNET
+   - Amount: 75.000 (credit)
+   - Balance: 100.000
+
+3. **Check Deposit**:
+   ```
+   19/12 DEP.CHEQ.OTROS BANCOS OF. SAN PABLO 06545793 500.000 39.007.190
+   ```
+   - Date: 19/12
+   - Description: DEP.CHEQ.OTROS BANCOS
+   - Check number: 06545793 (8 digits)
+   - Amount: 500.000 (credit)
+   - Balance: 39.007.190
+
+4. **Check Returned**:
+   ```
+   20/12 CHEQUE DEPOSITADO DEVUELTO OF. SAN PABLO 06545793 500.000 38.507.190
+   ```
+   - Date: 20/12
+   - Description: CHEQUE DEPOSITADO DEVUELTO
+   - Check number: 06545793 (8 digits)
+   - Amount: 500.000 (debit)
+   - Balance: 38.507.190
+
+5. **PAGO Transaction with Folio**:
+   ```
+   15/01 PAGO:PROVEEDORES 0776016489 200.000 5.000.000
+   ```
+   - Date: 15/01
+   - Description: PAGO:PROVEEDORES
+   - Folio: 0776016489 (10 digits starting with 0)
+   - Amount: 200.000 (credit)
+   - Balance: 5.000.000
+
+**Parsing Challenges:**
+
+1. **Text Extraction**: PDF text needs to be extracted and split into lines
+2. **Amount Format**: Chilean format uses dots as thousand separators (1.234.567)
+3. **Date Format**: Transactions use DD/MM (year inferred from statement period)
+4. **Transaction Type Detection**: Must identify credit vs debit based on keywords:
+   - Credits (ingresos): "TRASPASO DE", "DEP.CHEQ", "REVERSO", "PAGO:PROVEEDORES", "Devolucion"
+   - Debits (egresos): "TRASPASO A", "CHEQUE DEPOSITADO DEVUELTO", most other transactions
+5. **Special Numbers**: Folio numbers (10 digits, start with 0) must be distinguished from amounts
+6. **Variable Columns**: Amount and balance positions vary based on description length
+
+**Implementation Notes:**
+
+- Uses `pdfplumber` library for text extraction
+- Regex patterns match transaction lines starting with DD/MM
+- Special handling for check deposits/returns (8-digit check numbers)
+- PAGO transactions with folios require filtering 10-digit numbers from amounts
+- Lines are stripped of leading/trailing whitespace before parsing
+- No channel information in PDF (unlike XLS which has "Canal o Sucursal" column)
 
 ## Adding a New Bank
 
@@ -319,6 +411,7 @@ Decimal(str(int(value)))
 - **pandas** (≥2.0.0): Data manipulation
 - **openpyxl** (≥3.0.0): XLSX file support
 - **xlrd** (≥2.0.0): XLS file support
+- **pdfplumber** (≥0.10.0): PDF text extraction
 
 ### Development
 
@@ -353,7 +446,7 @@ ruff check .
 
 ## Future Improvements
 
-- [ ] Add PDF parsing support for banks that only provide PDF statements
+- [x] Add PDF parsing support for banks that only provide PDF statements (Banco de Chile done)
 - [ ] Implement CSV importers for banks with CSV exports
 - [x] Add support for credit card statements (Banco de Chile done)
 - [ ] Implement automatic payee categorization

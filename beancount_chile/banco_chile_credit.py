@@ -52,6 +52,10 @@ class BancoChileCreditImporter(Importer):
         Returns:
             True if the file can be processed, False otherwise
         """
+        # Convert to Path if string (beangulp may pass strings)
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+
         # Check file extension
         if filepath.suffix.lower() not in [".xls", ".xlsx"]:
             return False

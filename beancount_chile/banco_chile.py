@@ -28,6 +28,7 @@ class BancoChileImporter(Importer):
         account_name: str,
         currency: str = "CLP",
         file_encoding: str = "utf-8",
+        categorizer=None,
     ):
         """
         Initialize the Banco de Chile importer.
@@ -38,11 +39,15 @@ class BancoChileImporter(Importer):
                 (e.g., "Assets:BancoChile:Checking")
             currency: Currency code (default: CLP)
             file_encoding: File encoding (default: utf-8)
+            categorizer: Optional callable that takes (date, payee, narration,
+                amount, metadata) and returns an account name or None for
+                automatic categorization of transactions
         """
         self.account_number = account_number
         self.account_name = account_name
         self.currency = currency
         self.file_encoding = file_encoding
+        self.categorizer = categorizer
         self.xls_extractor = BancoChileXLSExtractor()
         self.pdf_extractor = BancoChilePDFExtractor()
 
@@ -223,6 +228,46 @@ class BancoChileImporter(Importer):
         meta = data.new_metadata(str(filepath), 0)
         meta["channel"] = transaction.channel
 
+        # Prepare postings list
+        postings = [
+            data.Posting(
+                account=self.account_name,
+                units=amount.Amount(txn_amount, self.currency),
+                cost=None,
+                price=None,
+                flag=None,
+                meta=None,
+            ),
+        ]
+
+        # Call categorizer if provided
+        if self.categorizer:
+            categorizer_metadata = {
+                "channel": transaction.channel,
+                "debit": transaction.debit,
+                "credit": transaction.credit,
+                "balance": transaction.balance,
+            }
+            category_account = self.categorizer(
+                transaction.date.date(),
+                payee,
+                narration,
+                txn_amount,
+                categorizer_metadata,
+            )
+            if category_account:
+                # Add second posting for the category
+                postings.append(
+                    data.Posting(
+                        account=category_account,
+                        units=amount.Amount(-txn_amount, self.currency),
+                        cost=None,
+                        price=None,
+                        flag=None,
+                        meta=None,
+                    )
+                )
+
         # Create transaction
         txn = data.Transaction(
             meta=meta,
@@ -232,16 +277,7 @@ class BancoChileImporter(Importer):
             narration=narration,
             tags=set(),
             links=set(),
-            postings=[
-                data.Posting(
-                    account=self.account_name,
-                    units=amount.Amount(txn_amount, self.currency),
-                    cost=None,
-                    price=None,
-                    flag=None,
-                    meta=None,
-                ),
-            ],
+            postings=postings,
         )
 
         return txn

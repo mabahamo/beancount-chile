@@ -342,3 +342,161 @@ class TestBancoChileCreditImporter:
         ][0]
         assert "installments" in txn_no_facturado.meta
         # City may or may not be present depending on transaction
+
+    def test_categorizer_single_string(self):
+        """Test categorizer with single string return (backward compatibility)."""
+
+        def simple_categorizer(date, payee, narration, amount, metadata):
+            """Simple categorizer that returns a single account."""
+            # Credit card amounts are positive (increase liability)
+            return "Expenses:CreditCard"
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=simple_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Check that transactions have 2 postings (account + category)
+        for txn in txn_entries:
+            assert len(txn.postings) == 2
+            # First posting is the credit card account
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
+            # Second posting is the categorized account
+            assert txn.postings[1].account == "Expenses:CreditCard"
+            # Amounts should balance
+            assert txn.postings[0].units.number + txn.postings[
+                1
+            ].units.number == Decimal("0")
+
+    def test_categorizer_none_return(self):
+        """Test categorizer with None return (no categorization)."""
+
+        def none_categorizer(date, payee, narration, amount, metadata):
+            """Categorizer that returns None."""
+            return None
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=none_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Check that transactions have only 1 posting (no categorization)
+        for txn in txn_entries:
+            assert len(txn.postings) == 1
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
+
+    def test_categorizer_list_split(self):
+        """Test categorizer with list return (transaction splitting)."""
+
+        def split_categorizer(date, payee, narration, amount, metadata):
+            """Categorizer that splits credit card transactions."""
+            # Credit card amounts are positive, so we split them as negative
+            # Split 70/30 between two categories
+            return [
+                ("Expenses:Category1", -amount * Decimal("0.7")),
+                ("Expenses:Category2", -amount * Decimal("0.3")),
+            ]
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=split_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        for txn in txn_entries:
+            # Should have 3 postings: credit card + 2 split categories
+            assert len(txn.postings) == 3
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
+            assert txn.postings[1].account == "Expenses:Category1"
+            assert txn.postings[2].account == "Expenses:Category2"
+
+            # Verify split amounts (70/30)
+            cc_amount = txn.postings[0].units.number
+            cat1_amount = txn.postings[1].units.number
+            cat2_amount = txn.postings[2].units.number
+
+            # Category1 should be 70% of the amount (negative)
+            assert cat1_amount == -cc_amount * Decimal("0.7")
+            # Category2 should be 30% of the amount (negative)
+            assert cat2_amount == -cc_amount * Decimal("0.3")
+
+            # Total should balance to zero
+            assert cc_amount + cat1_amount + cat2_amount == Decimal("0")
+
+    def test_categorizer_conditional_statement_type(self):
+        """Test categorizer with conditional logic based on statement type."""
+
+        def statement_type_categorizer(date, payee, narration, amount, metadata):
+            """Categorizer that behaves differently for billed vs unbilled."""
+            # Only categorize billed transactions
+            if metadata.get("statement_type") == "facturado":
+                return "Expenses:Billed"
+            # Don't categorize unbilled
+            return None
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=statement_type_categorizer,
+        )
+
+        # Test facturado - should be categorized
+        entries_facturado = importer.extract(FIXTURE_FACTURADO)
+        txn_facturado = [
+            e for e in entries_facturado if e.__class__.__name__ == "Transaction"
+        ]
+        for txn in txn_facturado:
+            assert len(txn.postings) == 2  # Categorized
+            assert txn.postings[1].account == "Expenses:Billed"
+
+        # Test no facturado - should NOT be categorized
+        entries_no_facturado = importer.extract(FIXTURE_NO_FACTURADO)
+        txn_no_facturado = [
+            e for e in entries_no_facturado if e.__class__.__name__ == "Transaction"
+        ]
+        for txn in txn_no_facturado:
+            assert len(txn.postings) == 1  # Not categorized
+
+    def test_categorizer_list_multiple_splits(self):
+        """Test categorizer with multiple split categories."""
+
+        def multi_split_categorizer(date, payee, narration, amount, metadata):
+            """Categorizer that splits into 3 categories."""
+            # Split into 3 categories: 50%, 30%, 20%
+            return [
+                ("Expenses:Cat1", -amount * Decimal("0.5")),
+                ("Expenses:Cat2", -amount * Decimal("0.3")),
+                ("Expenses:Cat3", -amount * Decimal("0.2")),
+            ]
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=multi_split_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        for txn in txn_entries:
+            # Should have 4 postings: credit card + 3 split categories
+            assert len(txn.postings) == 4
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
+            assert txn.postings[1].account == "Expenses:Cat1"
+            assert txn.postings[2].account == "Expenses:Cat2"
+            assert txn.postings[3].account == "Expenses:Cat3"
+
+            # Verify amounts balance
+            total = sum(posting.units.number for posting in txn.postings)
+            assert total == Decimal("0")

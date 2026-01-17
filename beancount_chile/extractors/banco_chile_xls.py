@@ -53,6 +53,27 @@ class BancoChileXLSExtractor:
         """Initialize the extractor."""
         pass
 
+    def _detect_excel_engine(self, filepath: str) -> str:
+        """
+        Detect the appropriate pandas engine based on file content.
+
+        Args:
+            filepath: Path to the Excel file
+
+        Returns:
+            Engine name: "xlrd" for old XLS, "openpyxl" for XLSX
+        """
+        # Read the first 4 bytes to check the file signature
+        with open(filepath, "rb") as f:
+            signature = f.read(4)
+
+        # XLSX files are ZIP files (start with 'PK')
+        # Old XLS files start with different signatures (e.g., 0xD0CF for OLE2)
+        if signature[:2] == b"PK":
+            return "openpyxl"
+        else:
+            return "xlrd"
+
     def extract(
         self, filepath: str
     ) -> tuple[BancoChileMetadata, list[BancoChileTransaction]]:
@@ -69,7 +90,9 @@ class BancoChileXLSExtractor:
             ValueError: If the file format is invalid
         """
         # Read the entire file without headers
-        df = pd.read_excel(filepath, header=None, engine="openpyxl")
+        # Auto-detect engine based on file content (not extension)
+        engine = self._detect_excel_engine(filepath)
+        df = pd.read_excel(filepath, header=None, engine=engine)
 
         # Extract metadata
         metadata = self._extract_metadata(df)
@@ -82,32 +105,34 @@ class BancoChileXLSExtractor:
     def _extract_metadata(self, df: pd.DataFrame) -> BancoChileMetadata:
         """Extract metadata from the statement header."""
         # Find account holder (row with "Sr(a):")
-        holder_row = df[df[1] == "Sr(a):"]
+        holder_row = df[df[1].astype(str).str.strip().str.startswith("Sr(a):")]
         if holder_row.empty:
             raise ValueError("Could not find account holder information")
         account_holder = str(holder_row.iloc[0, 2])
 
         # Find RUT (row with "Rut:")
-        rut_row = df[df[1] == "Rut:"]
+        rut_row = df[df[1].astype(str).str.strip().str.startswith("Rut:")]
         if rut_row.empty:
             raise ValueError("Could not find RUT information")
         rut = str(rut_row.iloc[0, 2])
 
         # Find account number (row with "Cuenta:")
-        account_row = df[df[1] == "Cuenta:"]
+        account_row = df[df[1].astype(str).str.strip().str.startswith("Cuenta:")]
         if account_row.empty:
             raise ValueError("Could not find account information")
         account_number = str(account_row.iloc[0, 2])
 
         # Find currency (row with "Moneda:")
-        currency_row = df[df[1] == "Moneda:"]
+        currency_row = df[df[1].astype(str).str.strip().str.startswith("Moneda:")]
         if currency_row.empty:
             raise ValueError("Could not find currency information")
         # Always use CLP for Chilean pesos
         currency = "CLP"
 
         # Extract balance information
-        balance_header_row = df[df[1] == "Saldo Disponible"]
+        balance_header_row = df[
+            df[1].astype(str).str.strip().str.startswith("Saldo Disponible")
+        ]
         if balance_header_row.empty:
             raise ValueError("Could not find balance information")
 
@@ -116,7 +141,9 @@ class BancoChileXLSExtractor:
         accounting_balance = self._parse_amount(df.iloc[balance_row_idx, 2])
 
         # Extract totals
-        totals_header_row = df[df[1] == "Total Cargos"]
+        totals_header_row = df[
+            df[1].astype(str).str.strip().str.startswith("Total Cargos")
+        ]
         if totals_header_row.empty:
             raise ValueError("Could not find totals information")
 
@@ -151,7 +178,7 @@ class BancoChileXLSExtractor:
     def _extract_transactions(self, df: pd.DataFrame) -> list[BancoChileTransaction]:
         """Extract transactions from the statement."""
         # Find the transaction header row
-        header_row = df[df[1] == "Fecha"]
+        header_row = df[df[1].astype(str).str.strip().str.startswith("Fecha")]
         if header_row.empty:
             raise ValueError("Could not find transaction header")
 

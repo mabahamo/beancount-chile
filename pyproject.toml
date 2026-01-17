@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "beancount-chile"
-version = "0.3.0"
+version = "0.3.1"
 description = "Beancount importers for Chilean banks"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Manuel Bahamondez-Honores", email = "manuel@bahamondez.com"}
 ]
 keywords = ["beancount", "beangulp", "chile", "banking", "importer"]
 classifiers = [
@@ -40,9 +40,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/beancount-chile"
-Repository = "https://github.com/yourusername/beancount-chile"
-Issues = "https://github.com/yourusername/beancount-chile/issues"
+Homepage = "https://github.com/mabahamo/beancount-chile"
+Repository = "https://github.com/mabahamo/beancount-chile"
+Issues = "https://github.com/mabahamo/beancount-chile/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

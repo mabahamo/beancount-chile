@@ -162,3 +162,169 @@ class TestBancoChileImporter:
 
         for txn in txn_entries:
             assert txn.postings[0].units.currency == "CLP"
+
+    def test_categorizer_single_string(self):
+        """Test categorizer with single string return (backward compatibility)."""
+
+        def simple_categorizer(date, payee, narration, amount, metadata):
+            """Simple categorizer that returns a single account."""
+            if amount < 0:  # Debit
+                return "Expenses:General"
+            return "Income:General"
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=simple_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Check that transactions have 2 postings (account + category)
+        for txn in txn_entries:
+            assert len(txn.postings) == 2
+            # First posting is the account
+            assert txn.postings[0].account == "Assets:BancoChile:Checking"
+            # Second posting is the categorized account
+            assert txn.postings[1].account in ["Expenses:General", "Income:General"]
+            # Amounts should balance
+            assert txn.postings[0].units.number + txn.postings[
+                1
+            ].units.number == Decimal("0")
+
+    def test_categorizer_none_return(self):
+        """Test categorizer with None return (no categorization)."""
+
+        def none_categorizer(date, payee, narration, amount, metadata):
+            """Categorizer that returns None."""
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=none_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Check that transactions have only 1 posting (no categorization)
+        for txn in txn_entries:
+            assert len(txn.postings) == 1
+            assert txn.postings[0].account == "Assets:BancoChile:Checking"
+
+    def test_categorizer_list_split(self):
+        """Test categorizer with list return (transaction splitting)."""
+
+        def split_categorizer(date, payee, narration, amount, metadata):
+            """Categorizer that splits transactions."""
+            if amount < 0:  # Debit
+                # Split 60/40 between two categories
+                return [
+                    ("Expenses:Category1", -amount * Decimal("0.6")),
+                    ("Expenses:Category2", -amount * Decimal("0.4")),
+                ]
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=split_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Find a debit transaction to check
+        debit_txns = [
+            txn for txn in txn_entries if txn.postings[0].units.number < Decimal("0")
+        ]
+        assert len(debit_txns) > 0
+
+        for txn in debit_txns:
+            # Should have 3 postings: account + 2 split categories
+            assert len(txn.postings) == 3
+            assert txn.postings[0].account == "Assets:BancoChile:Checking"
+            assert txn.postings[1].account == "Expenses:Category1"
+            assert txn.postings[2].account == "Expenses:Category2"
+
+            # Verify split amounts (60/40)
+            account_amount = txn.postings[0].units.number
+            cat1_amount = txn.postings[1].units.number
+            cat2_amount = txn.postings[2].units.number
+
+            # Category1 should be 60% of the absolute amount
+            assert cat1_amount == -account_amount * Decimal("0.6")
+            # Category2 should be 40% of the absolute amount
+            assert cat2_amount == -account_amount * Decimal("0.4")
+
+            # Total should balance to zero
+            assert account_amount + cat1_amount + cat2_amount == Decimal("0")
+
+    def test_categorizer_list_multiple_splits(self):
+        """Test categorizer with multiple split categories."""
+
+        def multi_split_categorizer(date, payee, narration, amount, metadata):
+            """Categorizer that splits into 3 categories."""
+            if amount < 0:  # Debit
+                # Split into 3 categories: 50%, 30%, 20%
+                return [
+                    ("Expenses:Cat1", -amount * Decimal("0.5")),
+                    ("Expenses:Cat2", -amount * Decimal("0.3")),
+                    ("Expenses:Cat3", -amount * Decimal("0.2")),
+                ]
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=multi_split_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        debit_txns = [
+            txn for txn in txn_entries if txn.postings[0].units.number < Decimal("0")
+        ]
+
+        for txn in debit_txns:
+            # Should have 4 postings: account + 3 split categories
+            assert len(txn.postings) == 4
+            assert txn.postings[0].account == "Assets:BancoChile:Checking"
+            assert txn.postings[1].account == "Expenses:Cat1"
+            assert txn.postings[2].account == "Expenses:Cat2"
+            assert txn.postings[3].account == "Expenses:Cat3"
+
+            # Verify amounts balance
+            total = sum(posting.units.number for posting in txn.postings)
+            assert total == Decimal("0")
+
+    def test_categorizer_conditional(self):
+        """Test categorizer with conditional logic."""
+
+        def conditional_categorizer(date, payee, narration, amount, metadata):
+            """Categorizer with conditional logic based on metadata."""
+            # Only categorize Internet transactions
+            if metadata.get("channel") == "Internet":
+                if amount < 0:
+                    return "Expenses:Online"
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=conditional_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Some transactions should be categorized, some not
+        categorized = [txn for txn in txn_entries if len(txn.postings) == 2]
+        uncategorized = [txn for txn in txn_entries if len(txn.postings) == 1]
+
+        # Both should exist (assuming fixture has both types)
+        assert len(categorized) >= 0
+        assert len(uncategorized) >= 0

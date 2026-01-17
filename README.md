@@ -162,7 +162,10 @@ def categorizer(date, payee, narration, amount, metadata):
         metadata: Dict with transaction-specific metadata
 
     Returns:
-        str: Account name for categorization, or None to skip
+        - None: No categorization
+        - str: Account name for single posting
+        - List[Tuple[str, Decimal]]: Multiple postings with (account, amount) pairs
+          for transaction splitting
     """
     # Your categorization logic here
     return "Expenses:Category" or None
@@ -280,9 +283,91 @@ CONFIG = [
 ]
 ```
 
+#### Example: Transaction Splitting (NEW)
+
+The categorizer can now return a list of tuples to split one transaction into multiple postings with fixed amounts. This is useful for:
+- Splitting shared expenses across multiple categories
+- Allocating specific amounts to different accounts
+- Handling transactions with multiple components
+
+```python
+from decimal import Decimal
+
+def split_categorizer(date, payee, narration, amount, metadata):
+    """Split transactions into multiple fixed-amount postings."""
+    # Split grocery shopping between food and household supplies
+    if "JUMBO" in payee.upper() or "UNIMARC" in payee.upper():
+        # For checking account, debits are negative
+        if amount < 0:  # Debit
+            return [
+                ("Expenses:Groceries", Decimal("40000")),
+                ("Expenses:Household", Decimal("10000")),
+            ]
+
+    # Split pharmacy purchase between medicine and personal care
+    if "PHARMACY" in payee.upper():
+        if amount < 0:
+            return [
+                ("Expenses:Health:Medicine", Decimal("25000")),
+                ("Expenses:Health:Personal", Decimal("8000")),
+            ]
+
+    # For credit cards, amounts are positive (increase liability)
+    # Split subscription service between personal and family
+    if "NETFLIX" in payee.upper():
+        return [
+            ("Expenses:Streaming:Personal", Decimal("-6000")),
+            ("Expenses:Streaming:Family", Decimal("-6000")),
+        ]
+
+    # No split needed
+    return None
+
+CONFIG = [
+    BancoChileImporter(
+        account_number="00-123-45678-90",
+        account_name="Assets:BancoChile:Checking",
+        currency="CLP",
+        categorizer=split_categorizer,
+    ),
+]
+```
+
+**Important Notes on Transaction Splitting:**
+
+1. **Amount Signs**:
+   - For checking accounts: debits are negative, so split amounts should be positive
+   - For credit cards: charges are positive, so split amounts should be negative
+   - The split amounts balance the original transaction
+
+2. **Balance**: The sum of split amounts should balance the original transaction amount. Beancount will flag unbalanced transactions.
+
+3. **Flexible Splits**: You can split into any number of postings:
+```python
+# Split into 3 categories with fixed amounts
+return [
+    ("Expenses:Groceries", Decimal("30000")),
+    ("Expenses:Household", Decimal("15000")),
+    ("Expenses:Personal", Decimal("5000")),
+]
+```
+
+4. **Mixed Amounts**: You can combine fixed amounts with calculated remainders:
+```python
+# Allocate fixed amount to one category, rest to another
+if "PHARMACY" in payee.upper():
+    medicine_amount = Decimal("15000")
+    return [
+        ("Expenses:Health:Medicine", medicine_amount),
+        ("Expenses:Health:Personal", -amount - medicine_amount),  # Remainder
+    ]
+```
+
 #### Example Output with Categorizer
 
-When a categorizer is provided and returns an account, transactions will have both postings:
+**Single Posting (String Return):**
+
+When a categorizer returns a single account string, transactions will have two postings:
 
 ```beancount
 2026-01-01 * "Starlink" "Pago:starlink Starlink"
@@ -296,6 +381,32 @@ When a categorizer is provided and returns an account, transactions will have bo
   installments: "01/01"
   Liabilities:CreditCard:BancoChile  12000 CLP
   Expenses:Streaming                -12000 CLP
+```
+
+**Split Postings (List Return):**
+
+When a categorizer returns a list of (account, amount) tuples, transactions can have multiple category postings:
+
+```beancount
+2026-01-15 * "Jumbo" "Supermercado Jumbo Santiago"
+  channel: "Internet"
+  Assets:BancoChile:Checking  -50000 CLP
+  Expenses:Groceries           40000 CLP
+  Expenses:Household           10000 CLP
+
+2026-01-20 * "Restaurant Central" "Restaurant Central Santiago"
+  channel: "Internet"
+  Assets:BancoChile:Checking  -35000 CLP
+  Expenses:Food:Restaurant     24500 CLP
+  Expenses:Entertainment       10500 CLP
+
+2026-01-16 ! "NETFLIX.COM" "NETFLIX.COM COMPRAS"
+  statement_type: "no_facturado"
+  city: "LAS CONDES"
+  installments: "01/01"
+  Liabilities:CreditCard:BancoChile  12000 CLP
+  Expenses:Streaming:Personal        -6000 CLP
+  Expenses:Streaming:Family          -6000 CLP
 ```
 
 #### Best Practices

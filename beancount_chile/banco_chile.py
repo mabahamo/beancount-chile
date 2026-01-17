@@ -1,8 +1,10 @@
 """Beancount importer for Banco de Chile account statements."""
 
+from datetime import date as date_type
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
-from typing import Optional, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 from beancount.core import amount, data, flags
 from beancount.core.number import D
@@ -14,6 +16,16 @@ from beancount_chile.extractors.banco_chile_xls import (
     BancoChileXLSExtractor,
 )
 from beancount_chile.helpers import clean_narration, normalize_payee
+
+# Type alias for categorizer return value
+# Can return:
+# - None: no categorization
+# - str: single category account
+# - List[Tuple[str, Decimal]]: multiple postings with (account, amount) pairs
+CategorizerReturn = Optional[Union[str, List[Tuple[str, Decimal]]]]
+
+# Type for the categorizer callable
+CategorizerFunc = Callable[[date_type, str, str, Decimal, dict], CategorizerReturn]
 
 
 class BancoChileImporter(Importer):
@@ -28,7 +40,7 @@ class BancoChileImporter(Importer):
         account_name: str,
         currency: str = "CLP",
         file_encoding: str = "utf-8",
-        categorizer=None,
+        categorizer: Optional[CategorizerFunc] = None,
     ):
         """
         Initialize the Banco de Chile importer.
@@ -40,8 +52,10 @@ class BancoChileImporter(Importer):
             currency: Currency code (default: CLP)
             file_encoding: File encoding (default: utf-8)
             categorizer: Optional callable that takes (date, payee, narration,
-                amount, metadata) and returns an account name or None for
-                automatic categorization of transactions
+                amount, metadata) and returns:
+                - None for no categorization
+                - str (account name) for single posting
+                - List[Tuple[str, Decimal]] for multiple split postings
         """
         self.account_number = account_number
         self.account_name = account_name
@@ -248,25 +262,41 @@ class BancoChileImporter(Importer):
                 "credit": transaction.credit,
                 "balance": transaction.balance,
             }
-            category_account = self.categorizer(
+            category_result = self.categorizer(
                 transaction.date.date(),
                 payee,
                 narration,
                 txn_amount,
                 categorizer_metadata,
             )
-            if category_account:
-                # Add second posting for the category
-                postings.append(
-                    data.Posting(
-                        account=category_account,
-                        units=amount.Amount(-txn_amount, self.currency),
-                        cost=None,
-                        price=None,
-                        flag=None,
-                        meta=None,
+
+            if category_result:
+                # Handle both string and list returns
+                if isinstance(category_result, str):
+                    # Single category account (backward compatible)
+                    postings.append(
+                        data.Posting(
+                            account=category_result,
+                            units=amount.Amount(-txn_amount, self.currency),
+                            cost=None,
+                            price=None,
+                            flag=None,
+                            meta=None,
+                        )
                     )
-                )
+                elif isinstance(category_result, list):
+                    # Multiple split postings
+                    for category_account, category_amount in category_result:
+                        postings.append(
+                            data.Posting(
+                                account=category_account,
+                                units=amount.Amount(category_amount, self.currency),
+                                cost=None,
+                                price=None,
+                                flag=None,
+                                meta=None,
+                            )
+                        )
 
         # Create transaction
         txn = data.Transaction(

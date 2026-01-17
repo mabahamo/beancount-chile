@@ -18,21 +18,10 @@ This project provides importers for various Chilean bank account statement forma
 - Python 3.10 or higher
 - Beancount 3.x
 
-### From Source
+### Install
 
 ```bash
-git clone https://github.com/yourusername/beancount-chile.git
-cd beancount-chile
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install in development mode
-pip install -e .
+pip install beancount-chile
 ```
 
 ## Usage
@@ -150,6 +139,173 @@ Note: Billed transactions are marked as cleared (`*`) while unbilled transaction
 - **Balance assertions**: Adds balance assertions to verify account balances
 - **Metadata tracking**: Preserves channel information (Internet, Sucursal, etc.)
 - **Deduplication support**: Works with beangulp's existing entry detection
+- **Custom categorization**: Optional categorizer function for automatic transaction categorization
+
+## Advanced Features
+
+### Custom Categorization
+
+Both importers support an optional `categorizer` parameter that allows you to automatically categorize transactions by providing a custom function. This is more flexible than pattern matching approaches as it gives you full control over the categorization logic.
+
+#### Categorizer Function Signature
+
+```python
+def categorizer(date, payee, narration, amount, metadata):
+    """
+    Categorize a transaction.
+
+    Args:
+        date: Transaction date (datetime.date)
+        payee: Extracted payee name (str)
+        narration: Transaction description (str)
+        amount: Transaction amount (Decimal, negative for debits)
+        metadata: Dict with transaction-specific metadata
+
+    Returns:
+        str: Account name for categorization, or None to skip
+    """
+    # Your categorization logic here
+    return "Expenses:Category" or None
+```
+
+#### Metadata Available
+
+**For Checking Account (BancoChileImporter):**
+- `channel`: Transaction channel (e.g., "Internet", "Sucursal")
+- `debit`: Debit amount (Decimal or None)
+- `credit`: Credit amount (Decimal or None)
+- `balance`: Account balance after transaction (Decimal)
+
+**For Credit Card (BancoChileCreditImporter):**
+- `statement_type`: "facturado" or "no_facturado"
+- `installments`: Installment info (e.g., "01/12" or None)
+- `category`: Transaction category for billed statements
+- `city`: Transaction city for unbilled statements
+- `card_type`: Card information for unbilled statements
+
+#### Example: Simple Pattern Matching
+
+```python
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Categorize based on payee name patterns."""
+    # Internet services
+    if "Starlink" in payee or "STARLINK" in narration:
+        return "Expenses:Internet"
+
+    # Transportation
+    if any(keyword in narration.upper() for keyword in ["UBER", "CABIFY", "TAXI"]):
+        return "Expenses:Transportation"
+
+    # Groceries
+    if any(store in payee.upper() for store in ["JUMBO", "UNIMARC", "SANTA ISABEL"]):
+        return "Expenses:Groceries"
+
+    # Don't categorize this transaction
+    return None
+
+CONFIG = [
+    BancoChileImporter(
+        account_number="00-123-45678-90",
+        account_name="Assets:BancoChile:Checking",
+        currency="CLP",
+        categorizer=my_categorizer,
+    ),
+]
+```
+
+#### Example: Amount-Based Categorization
+
+```python
+def amount_based_categorizer(date, payee, narration, amount, metadata):
+    """Categorize based on transaction amount."""
+    # Large debits might be rent or major expenses
+    if amount < -500000:  # More than 500k CLP debit
+        return "Expenses:Major"
+
+    # Credits are income
+    if amount > 0:
+        return "Income:Salary"
+
+    return None
+```
+
+#### Example: Metadata-Based Categorization
+
+```python
+def metadata_categorizer(date, payee, narration, amount, metadata):
+    """Categorize based on transaction metadata."""
+    # Only categorize online transactions
+    if metadata.get("channel") == "Internet":
+        if amount < 0:  # Debit
+            return "Expenses:Online"
+
+    # For credit cards, use statement type
+    if metadata.get("statement_type") == "facturado":
+        # Already billed transactions
+        return "Expenses:CreditCard"
+
+    return None
+```
+
+#### Example: Different Categorizers for Different Accounts
+
+```python
+def checking_categorizer(date, payee, narration, amount, metadata):
+    """Categorizer for checking account."""
+    if "Starlink" in payee:
+        return "Expenses:Internet"
+    return None
+
+def credit_card_categorizer(date, payee, narration, amount, metadata):
+    """Categorizer for credit card."""
+    if "NETFLIX" in payee.upper():
+        return "Expenses:Streaming"
+    if metadata.get("city") == "LAS CONDES":
+        return "Expenses:Shopping"
+    return None
+
+CONFIG = [
+    BancoChileImporter(
+        account_number="00-123-45678-90",
+        account_name="Assets:BancoChile:Checking",
+        currency="CLP",
+        categorizer=checking_categorizer,
+    ),
+    BancoChileCreditImporter(
+        card_last_four="1234",
+        account_name="Liabilities:CreditCard:BancoChile",
+        currency="CLP",
+        categorizer=credit_card_categorizer,
+    ),
+]
+```
+
+#### Example Output with Categorizer
+
+When a categorizer is provided and returns an account, transactions will have both postings:
+
+```beancount
+2026-01-01 * "Starlink" "Pago:starlink Starlink"
+  channel: "Internet"
+  Assets:BancoChile:Checking  -48000 CLP
+  Expenses:Internet            48000 CLP
+
+2026-01-16 ! "NETFLIX.COM" "NETFLIX.COM COMPRAS"
+  statement_type: "no_facturado"
+  city: "LAS CONDES"
+  installments: "01/01"
+  Liabilities:CreditCard:BancoChile  12000 CLP
+  Expenses:Streaming                -12000 CLP
+```
+
+#### Best Practices
+
+1. **Start Simple**: Begin with a few high-frequency patterns and expand over time
+2. **Return None**: Always return `None` for transactions you don't want to categorize automatically
+3. **Case Insensitive**: Use `.upper()` or `.lower()` for pattern matching to handle case variations
+4. **Test Thoroughly**: Review categorized transactions to ensure accuracy
+5. **Use Metadata**: Leverage the metadata dict for more precise categorization rules
+6. **Combine Strategies**: Mix pattern matching, amount-based, and metadata-based logic as needed
 
 ## Development
 

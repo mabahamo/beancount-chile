@@ -5,6 +5,7 @@
 !tests/fixtures/*.xls
 !tests/fixtures/*.xlsx
 !tests/fixtures/*.pdf
+testimport.py
 
 # Python
 __pycache__/

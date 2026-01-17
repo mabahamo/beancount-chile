@@ -1,7 +1,7 @@
 """Beancount importer for Banco de Chile account statements."""
 
 from datetime import date as date_type
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple, Union
@@ -192,11 +192,15 @@ class BancoChileImporter(Importer):
         # Add a balance assertion at the end of the statement
         # Use metadata.accounting_balance (SALDO FINAL) instead of
         # last_transaction.balance which can be 0 for PDF files
+        # Balance assertions in Beancount check the balance at the BEGINNING of
+        # the specified date, so we set the date to the day AFTER the statement
+        # date to verify the final balance after all transactions
         if metadata.accounting_balance:
             balance_amount = D(str(metadata.accounting_balance))
+            balance_date = metadata.statement_date.date() + timedelta(days=1)
             balance_entry = data.Balance(
                 meta=data.new_metadata(str(filepath), 0),
-                date=metadata.statement_date.date(),
+                date=balance_date,
                 account=self.account_name,
                 amount=amount.Amount(balance_amount, self.currency),
                 tolerance=None,

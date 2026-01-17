@@ -109,7 +109,9 @@ class BancoChileXLSExtractor:
         currency = "CLP"
 
         # Extract balance information
-        balance_header_row = df[df[1].astype(str).str.strip().str.startswith("Saldo Disponible")]
+        balance_header_row = df[
+            df[1].astype(str).str.strip().str.startswith("Saldo Disponible")
+        ]
         if balance_header_row.empty:
             raise ValueError("Could not find balance information")
 
@@ -118,7 +120,9 @@ class BancoChileXLSExtractor:
         accounting_balance = self._parse_amount(df.iloc[balance_row_idx, 2])
 
         # Extract totals
-        totals_header_row = df[df[1].astype(str).str.strip().str.startswith("Total Cargos")]
+        totals_header_row = df[
+            df[1].astype(str).str.strip().str.startswith("Total Cargos")
+        ]
         if totals_header_row.empty:
             raise ValueError("Could not find totals information")
 

@@ -2,12 +2,13 @@
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from beancount.core import amount, data, flags
 from beancount.core.number import D
 from beangulp import Importer
 
+from beancount_chile.extractors.banco_chile_pdf import BancoChilePDFExtractor
 from beancount_chile.extractors.banco_chile_xls import (
     BancoChileTransaction,
     BancoChileXLSExtractor,
@@ -16,7 +17,10 @@ from beancount_chile.helpers import clean_narration, normalize_payee
 
 
 class BancoChileImporter(Importer):
-    """Importer for Banco de Chile XLS/XLSX account statements (cartola)."""
+    """Importer for Banco de Chile account statements (cartola).
+
+    Supports XLS/XLSX/PDF formats.
+    """
 
     def __init__(
         self,
@@ -30,7 +34,8 @@ class BancoChileImporter(Importer):
 
         Args:
             account_number: Bank account number (e.g., "00-123-45678-90")
-            account_name: Beancount account name (e.g., "Assets:BancoChile:Checking")
+            account_name: Beancount account name
+                (e.g., "Assets:BancoChile:Checking")
             currency: Currency code (default: CLP)
             file_encoding: File encoding (default: utf-8)
         """
@@ -38,7 +43,31 @@ class BancoChileImporter(Importer):
         self.account_name = account_name
         self.currency = currency
         self.file_encoding = file_encoding
-        self.extractor = BancoChileXLSExtractor()
+        self.xls_extractor = BancoChileXLSExtractor()
+        self.pdf_extractor = BancoChilePDFExtractor()
+
+    def _get_extractor(
+        self, filepath: Path
+    ) -> Optional[Union[BancoChileXLSExtractor, BancoChilePDFExtractor]]:
+        """
+        Get the appropriate extractor based on file extension.
+
+        Args:
+            filepath: Path to the file
+
+        Returns:
+            Extractor instance or None if unsupported format
+        """
+        # Convert to Path if string (beangulp may pass strings)
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+        suffix = filepath.suffix.lower()
+        if suffix in [".xls", ".xlsx"]:
+            return self.xls_extractor
+        elif suffix == ".pdf":
+            return self.pdf_extractor
+        else:
+            return None
 
     def identify(self, filepath: Path) -> bool:
         """
@@ -50,13 +79,14 @@ class BancoChileImporter(Importer):
         Returns:
             True if the file can be processed, False otherwise
         """
-        # Check file extension
-        if filepath.suffix.lower() not in [".xls", ".xlsx"]:
+        # Get appropriate extractor based on file extension
+        extractor = self._get_extractor(filepath)
+        if not extractor:
             return False
 
         try:
             # Try to extract metadata
-            metadata, _ = self.extractor.extract(str(filepath))
+            metadata, _ = extractor.extract(str(filepath))
 
             # Check if account number matches
             return metadata.account_number == self.account_number
@@ -86,8 +116,12 @@ class BancoChileImporter(Importer):
         Returns:
             Statement date
         """
+        extractor = self._get_extractor(filepath)
+        if not extractor:
+            return None
+
         try:
-            metadata, _ = self.extractor.extract(str(filepath))
+            metadata, _ = extractor.extract(str(filepath))
             return metadata.statement_date
         except Exception:
             return None
@@ -102,10 +136,16 @@ class BancoChileImporter(Importer):
         Returns:
             Suggested filename
         """
+        extractor = self._get_extractor(filepath)
+        if not extractor:
+            return None
+
         try:
-            metadata, _ = self.extractor.extract(str(filepath))
+            metadata, _ = extractor.extract(str(filepath))
             date_str = metadata.statement_date.strftime("%Y-%m-%d")
-            return f"{date_str}_banco_chile_{self.account_number.replace('-', '')}.xls"
+            ext = filepath.suffix.lower()
+            account_clean = self.account_number.replace("-", "")
+            return f"{date_str}_banco_chile_{account_clean}{ext}"
         except Exception:
             return None
 
@@ -122,7 +162,11 @@ class BancoChileImporter(Importer):
         Returns:
             List of Beancount entries
         """
-        metadata, transactions = self.extractor.extract(str(filepath))
+        extractor = self._get_extractor(filepath)
+        if not extractor:
+            return []
+
+        metadata, transactions = extractor.extract(str(filepath))
 
         entries = []
 

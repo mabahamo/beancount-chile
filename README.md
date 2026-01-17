@@ -8,7 +8,7 @@ This project provides importers for various Chilean bank account statement forma
 
 | Bank | Format | Status | File Extension |
 |------|--------|--------|----------------|
-| Banco de Chile | Cartola (Account Statement) | ✅ Supported | .xls, .xlsx |
+| Banco de Chile | Cartola (Account Statement) | ✅ Supported | .xls, .xlsx, .pdf |
 | Banco de Chile | Credit Card Statements (Facturado/No Facturado) | ✅ Supported | .xls, .xlsx |
 
 ## Installation
@@ -39,7 +39,7 @@ pip install -e .
 
 ### Banco de Chile Importer
 
-The Banco de Chile importer supports XLS/XLSX account statement files (cartola).
+The Banco de Chile importer supports XLS/XLSX/PDF account statement files (cartola).
 
 #### Basic Usage
 
@@ -72,12 +72,15 @@ Use beangulp to extract transactions:
 # Identify which importers can handle your files
 bean-extract import_config.py ~/Downloads/
 
-# Extract transactions from a specific file
+# Extract transactions from a specific file (XLS, XLSX, or PDF)
 bean-extract import_config.py ~/Downloads/cartola.xls
+bean-extract import_config.py ~/Downloads/cartola.pdf
 
 # Extract and append to your beancount file
-bean-extract import_config.py ~/Downloads/cartola.xls >> accounts.beancount
+bean-extract import_config.py ~/Downloads/cartola.pdf >> accounts.beancount
 ```
+
+**Note**: The importer automatically detects the file format (XLS/XLSX/PDF) and uses the appropriate parser. PDF files are parsed using text extraction, which handles the same transaction types as XLS files.
 
 #### Example Output
 
@@ -190,12 +193,14 @@ beancount-chile/
 │   ├── helpers.py                     # Shared utilities
 │   └── extractors/                    # File format parsers
 │       ├── __init__.py
-│       ├── banco_chile_xls.py         # Checking account parser
+│       ├── banco_chile_xls.py         # Checking account XLS parser
+│       ├── banco_chile_pdf.py         # Checking account PDF parser
 │       └── banco_chile_credit_xls.py  # Credit card parser
 ├── tests/                             # Test suite
 │   ├── __init__.py
 │   ├── test_banco_chile.py            # Checking account tests
 │   ├── test_banco_chile_credit.py     # Credit card tests
+│   ├── test_banco_chile_pdf.py        # PDF parser tests
 │   └── fixtures/                      # Test data (anonymized)
 │       ├── banco_chile_cartola_sample.xls
 │       ├── banco_chile_credit_facturado_sample.xls

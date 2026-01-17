@@ -241,19 +241,19 @@ Footer section:
 
 1. **Standard Transfer (Debit)**:
    ```
-   10/01 TRASPASO A:Jorge Arias INTERNET 3.147.734 12.100.583
+   10/01 TRASPASO A:TEST USUARIO UNO INTERNET 3.147.734 12.100.583
    ```
    - Date: 10/01
-   - Description: TRASPASO A:Jorge Arias INTERNET
+   - Description: TRASPASO A:TEST USUARIO UNO INTERNET
    - Amount: 3.147.734 (debit)
    - Balance: 12.100.583
 
 2. **Standard Transfer (Credit)**:
    ```
-   02/01 TRASPASO DE:DANIELA DEL PILAR MONT INTERNET 75.000 100.000
+   02/01 TRASPASO DE:TEST USUARIO DOS INTERNET 75.000 100.000
    ```
    - Date: 02/01
-   - Description: TRASPASO DE:DANIELA DEL PILAR MONT INTERNET
+   - Description: TRASPASO DE:TEST USUARIO DOS INTERNET
    - Amount: 75.000 (credit)
    - Balance: 100.000
 

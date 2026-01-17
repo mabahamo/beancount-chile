@@ -147,7 +147,8 @@ class TestParseTransactionLine:
 
         assert txn is not None
         assert txn.date == datetime(2025, 1, 10)
-        assert "TRASPASO A:TEST USUARIO CUATRO INTERNET" in txn.description
+        assert txn.description == "TRASPASO A:TEST USUARIO CUATRO"
+        assert txn.channel == "INTERNET"
         assert txn.debit == Decimal("3147734")
         assert txn.credit is None
         assert txn.balance == Decimal("12100583")
@@ -159,7 +160,8 @@ class TestParseTransactionLine:
 
         assert txn is not None
         assert txn.date == datetime(2025, 1, 2)
-        assert "TRASPASO DE:" in txn.description
+        assert txn.description == "TRASPASO DE:TEST USUARIO CINCO"
+        assert txn.channel == "INTERNET"
         assert txn.debit is None
         assert txn.credit == Decimal("75000")
         assert txn.balance == Decimal("100000")
@@ -273,13 +275,15 @@ class TestBancoChilePDFExtractor:
 
         # Check first transaction (credit)
         assert transactions[0].date == datetime(2025, 1, 2)
-        assert "TRASPASO DE" in transactions[0].description
+        assert transactions[0].description == "TRASPASO DE:TEST USUARIO DOS"
+        assert transactions[0].channel == "INTERNET"
         assert transactions[0].credit == Decimal("500000")
         assert transactions[0].debit is None
 
         # Check second transaction (debit)
         assert transactions[1].date == datetime(2025, 1, 5)
-        assert "TRASPASO A" in transactions[1].description
+        assert transactions[1].description == "TRASPASO A:TEST USUARIO TRES"
+        assert transactions[1].channel == "INTERNET"
         assert transactions[1].debit == Decimal("200000")
         assert transactions[1].credit is None
 

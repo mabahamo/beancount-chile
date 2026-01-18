@@ -408,7 +408,7 @@ class TestBancoChileImporter:
             assert total == Decimal("0")
 
     def test_categorizer_tuple_return_subaccount_only(self):
-        """Test categorizer returning (subaccount, None) for subaccount without category."""
+        """Test categorizer returning (subaccount, None) - no category."""
 
         def subaccount_only_categorizer(date, payee, narration, amount, metadata):
             """Return tuple with subaccount and None (no category)."""

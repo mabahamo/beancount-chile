@@ -21,10 +21,10 @@ from beancount_chile.helpers import clean_narration, normalize_payee
 # Can return:
 # - None: no categorization, no subaccount
 # - str: single category account (no subaccount)
-# - List[Tuple[str, Decimal]]: multiple postings with (account, amount) pairs (no subaccount)
+# - List[Tuple[str, Decimal]]: multiple postings (no subaccount)
 # - Tuple[str, str]: (subaccount_suffix, category_account)
-# - Tuple[str, List[Tuple[str, Decimal]]]: (subaccount_suffix, split_postings)
-# - Tuple[str, None]: (subaccount_suffix, no category) - for subaccount only
+# - Tuple[str, List[Tuple[str, Decimal]]]: (subaccount, splits)
+# - Tuple[str, None]: (subaccount_suffix, no category)
 CategorizerReturn = Optional[
     Union[
         str,
@@ -64,9 +64,9 @@ class BancoChileImporter(Importer):
                 amount, metadata) and returns:
                 - None for no categorization, no subaccount
                 - str (account name) for single posting, no subaccount
-                - List[Tuple[str, Decimal]] for multiple split postings, no subaccount
+                - List[Tuple[str, Decimal]] for split postings, no subaccount
                 - Tuple[str, str] for (subaccount_suffix, category_account)
-                - Tuple[str, List[Tuple[str, Decimal]]] for (subaccount_suffix, split_postings)
+                - Tuple[str, List[Tuple[str, Decimal]]] for (subaccount, splits)
                 - Tuple[str, None] for subaccount only, no category
         """
         self.account_number = account_number

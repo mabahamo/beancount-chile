@@ -320,9 +320,7 @@ class BancoChileImporter(Importer):
                 postings.append(
                     data.Posting(
                         account=posting_dict["category"],
-                        units=amount.Amount(
-                            posting_dict["amount"], self.currency
-                        ),
+                        units=amount.Amount(posting_dict["amount"], self.currency),
                         cost=None,
                         price=None,
                         flag=None,

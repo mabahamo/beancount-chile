@@ -516,10 +516,7 @@ class TestBancoChileCreditImporter:
 
         def subaccount_categorizer(date, payee, narration, amount, metadata):
             """Return dict with subaccount and category."""
-            return {
-                "subaccount": "Personal",
-                "category": "Expenses:Shopping"
-            }
+            return {"subaccount": "Personal", "category": "Expenses:Shopping"}
 
         importer = BancoChileCreditImporter(
             card_last_four="1234",
@@ -561,7 +558,7 @@ class TestBancoChileCreditImporter:
                         "category": "Expenses:Software",
                         "amount": -amount * Decimal("0.3"),
                     },
-                ]
+                ],
             }
 
         importer = BancoChileCreditImporter(

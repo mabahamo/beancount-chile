@@ -354,10 +354,7 @@ class TestBancoChileImporter:
         def subaccount_categorizer(date, payee, narration, amount, metadata):
             """Return dict with subaccount and category."""
             if amount < 0:  # Debit
-                return {
-                    "subaccount": "Car",
-                    "category": "Expenses:Car:Gas"
-                }
+                return {"subaccount": "Car", "category": "Expenses:Car:Gas"}
             return None
 
         importer = BancoChileImporter(
@@ -403,7 +400,7 @@ class TestBancoChileImporter:
                             "category": "Expenses:Household",
                             "amount": -amount * Decimal("0.4"),
                         },
-                    ]
+                    ],
                 }
             return None
 
@@ -486,7 +483,7 @@ class TestBancoChileImporter:
                 return {
                     "payee": "Supermercado Jumbo",
                     "narration": "Grocery shopping",
-                    "category": "Expenses:Groceries"
+                    "category": "Expenses:Groceries",
                 }
             return None
 

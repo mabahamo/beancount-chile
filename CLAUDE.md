@@ -446,50 +446,9 @@ ruff check .
 
 ## Advanced Features
 
-### Account Modifier for Virtual Subaccounts
-
-Both `BancoChileImporter` and `BancoChileCreditImporter` support an optional `account_modifier` parameter that allows creating virtual subaccounts for envelope budgeting or tracking earmarked funds.
-
-**Function Signature:**
-```python
-def account_modifier(date, payee, narration, amount, metadata, category_result):
-    """
-    Args:
-        date: Transaction date
-        payee: Payee name
-        narration: Transaction description
-        amount: Transaction amount (Decimal)
-        metadata: Transaction metadata dict
-        category_result: Output from categorizer (None, str, or List[Tuple[str, Decimal]])
-
-    Returns:
-        str: Subaccount suffix (e.g., "Car", "Emergency")
-        None: Use base account (no subaccount)
-    """
-    return "SubaccountName" or None
-```
-
-**Key Points:**
-- Called AFTER categorizer (if both are provided)
-- Receives categorizer result as parameter
-- Modifies only the asset/liability account (first posting)
-- Can be used alone or combined with categorizer
-
-**Use Cases:**
-- Envelope budgeting (Car, Vacation, Emergency funds)
-- Savings goals tracking
-- Business/Personal expense separation
-- Budget category mapping
-
-**Example Flow:**
-1. Transaction imported
-2. Categorizer runs → determines expense category (e.g., "Expenses:Car:Gas")
-3. Account modifier runs → receives "Expenses:Car:Gas" → returns "Car"
-4. Final transaction: `Assets:BancoChile:Checking:Car` → `Expenses:Car:Gas`
-
 ### Categorizer Tuple Returns (v0.5.0)
 
-Starting in v0.5.0, categorizers can return tuples to specify both the subaccount suffix and the category in a single function, eliminating the need to use both `categorizer` and `account_modifier` for common use cases.
+Starting in v0.5.0, categorizers can return tuples to specify both the subaccount suffix and the category in a single function. This provides a unified way to handle virtual subaccounts for envelope budgeting or tracking earmarked funds.
 
 **Type Alias:**
 ```python
@@ -499,6 +458,7 @@ CategorizerReturn = Optional[
         List[Tuple[str, Decimal]],                # Split postings (backward compatible)
         Tuple[str, str],                          # (subaccount_suffix, category_account) - NEW!
         Tuple[str, List[Tuple[str, Decimal]]],    # (subaccount_suffix, split_postings) - NEW!
+        Tuple[str, None],                         # (subaccount_suffix, None) - Subaccount only - NEW!
     ]
 ]
 ```
@@ -530,6 +490,18 @@ CategorizerReturn = Optional[
    ```
    Result: `Assets:BancoChile:Checking:Household` → split across multiple expense accounts
 
+3. **Subaccount Only**: `Tuple[str, None]`
+   - First element: Subaccount suffix
+   - Second element: None (no automatic categorization)
+   ```python
+   def categorizer(date, payee, narration, amount, metadata):
+       # Large deposits to emergency fund, but don't categorize
+       if amount > 500000:
+           return ("Emergency", None)
+       return None
+   ```
+   Result: `Assets:BancoChile:Checking:Emergency` → single posting, no category added
+
 **Implementation Details:**
 
 The importer detects tuple returns with runtime type checking:
@@ -541,21 +513,17 @@ categorizer_subaccount = None
 if self.categorizer:
     raw_result = self.categorizer(...)
 
-    # Check if categorizer returned a tuple with (subaccount, category/splits)
+    # Check if categorizer returned a tuple with (subaccount, category/splits/None)
     if isinstance(raw_result, tuple) and len(raw_result) == 2:
         categorizer_subaccount, category_result = raw_result
     else:
         category_result = raw_result
 
-# account_modifier can still override the subaccount
-subaccount_suffix = categorizer_subaccount
-if self.account_modifier:
-    modifier_result = self.account_modifier(..., category_result)
-    if modifier_result:
-        subaccount_suffix = modifier_result  # Override
-
-if subaccount_suffix:
-    account_name = f"{self.account_name}:{subaccount_suffix}"
+# Apply subaccount suffix if provided
+if categorizer_subaccount:
+    account_name = f"{self.account_name}:{categorizer_subaccount}"
+else:
+    account_name = self.account_name
 ```
 
 **Backward Compatibility:**
@@ -565,50 +533,56 @@ All existing categorizers continue to work unchanged:
 - Returning `str` → Single category account
 - Returning `List[Tuple[str, Decimal]]` → Split postings
 
-**When to Use Each Approach:**
+**Use Cases:**
 
-| Use Case | Recommended Approach |
-|----------|---------------------|
-| Simple expense categorization | Categorizer returns `str` |
-| Split postings across categories | Categorizer returns `List[Tuple[str, Decimal]]` |
-| Subaccount + category in one function | Categorizer returns `Tuple[str, str]` |
-| Subaccount + split postings | Categorizer returns `Tuple[str, List[...]]` |
-| Complex logic (subaccount depends on category) | Categorizer + `account_modifier` |
-| Different logic for subaccounts vs categories | Categorizer + `account_modifier` |
+| Scenario | Return Type | Example |
+|----------|-------------|---------|
+| Simple expense categorization | `str` | `"Expenses:Groceries"` |
+| Split postings across categories | `List[Tuple[str, Decimal]]` | `[("Expenses:A", 100), ("Expenses:B", 50)]` |
+| Subaccount + category | `Tuple[str, str]` | `("Car", "Expenses:Car:Gas")` |
+| Subaccount + split postings | `Tuple[str, List[...]]` | `("Household", [(account, amount), ...])` |
+| Subaccount only (no category) | `Tuple[str, None]` | `("Emergency", None)` |
 
-**Migration Example:**
+**Example: Complete Categorizer with All Return Types**
 
-Before (v0.4.2 - two functions):
 ```python
-def my_categorizer(date, payee, narration, amount, metadata):
-    if "SHELL" in payee.upper():
-        return "Expenses:Car:Gas"
-    return None
+from decimal import Decimal
 
-def my_account_modifier(date, payee, narration, amount, metadata, category_result):
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Complete example showing all return types."""
+    # Subaccount + category
     if "SHELL" in payee.upper():
-        return "Car"
+        return ("Car", "Expenses:Car:Gas")
+
+    # Subaccount + split postings
+    if "JUMBO" in payee.upper():
+        return ("Household", [
+            ("Expenses:Groceries", Decimal("40000")),
+            ("Expenses:Household", Decimal("10000")),
+        ])
+
+    # Subaccount only (no category)
+    if amount > 500000:
+        return ("Emergency", None)
+
+    # Just category (no subaccount) - backward compatible
+    if "NETFLIX" in payee.upper():
+        return "Expenses:Streaming"
+
+    # Split without subaccount - backward compatible
+    if "PHARMACY" in payee.upper():
+        return [
+            ("Expenses:Health:Medicine", Decimal("15000")),
+            ("Expenses:Health:Personal", -amount - Decimal("15000")),
+        ]
+
+    # No categorization
     return None
 
 importer = BancoChileImporter(
     account_number="...",
     account_name="Assets:BancoChile:Checking",
     categorizer=my_categorizer,
-    account_modifier=my_account_modifier,  # Duplicate pattern matching!
-)
-```
-
-After (v0.5.0 - single function):
-```python
-def my_categorizer(date, payee, narration, amount, metadata):
-    if "SHELL" in payee.upper():
-        return ("Car", "Expenses:Car:Gas")  # Tuple!
-    return None
-
-importer = BancoChileImporter(
-    account_number="...",
-    account_name="Assets:BancoChile:Checking",
-    categorizer=my_categorizer,  # No account_modifier needed!
 )
 ```
 

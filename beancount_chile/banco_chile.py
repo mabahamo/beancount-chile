@@ -19,29 +19,22 @@ from beancount_chile.helpers import clean_narration, normalize_payee
 
 # Type alias for categorizer return value
 # Can return:
-# - None: no categorization
-# - str: single category account
-# - List[Tuple[str, Decimal]]: multiple postings with (account, amount) pairs
-# - Tuple[str, str]: (subaccount_suffix, category_account) - NEW!
-# - Tuple[str, List[Tuple[str, Decimal]]]: (subaccount_suffix, split_postings) - NEW!
+# - None: no categorization, no subaccount
+# - str: single category account (no subaccount)
+# - List[Tuple[str, Decimal]]: multiple postings with (account, amount) pairs (no subaccount)
+# - Tuple[str, str]: (subaccount_suffix, category_account)
+# - Tuple[str, List[Tuple[str, Decimal]]]: (subaccount_suffix, split_postings)
+# - Tuple[str, None]: (subaccount_suffix, no category) - for subaccount only
 CategorizerReturn = Optional[
     Union[
         str,
         List[Tuple[str, Decimal]],
-        Tuple[str, str],
-        Tuple[str, List[Tuple[str, Decimal]]],
+        Tuple[str, Optional[Union[str, List[Tuple[str, Decimal]]]]],
     ]
 ]
 
 # Type for the categorizer callable
 CategorizerFunc = Callable[[date_type, str, str, Decimal, dict], CategorizerReturn]
-
-# Type for the account_modifier callable
-# Takes the same parameters as categorizer plus the categorizer result
-# Returns an optional subaccount suffix (e.g., "Car", "Emergency")
-AccountModifierFunc = Callable[
-    [date_type, str, str, Decimal, dict, CategorizerReturn], Optional[str]
-]
 
 
 class BancoChileImporter(Importer):
@@ -57,7 +50,6 @@ class BancoChileImporter(Importer):
         currency: str = "CLP",
         file_encoding: str = "utf-8",
         categorizer: Optional[CategorizerFunc] = None,
-        account_modifier: Optional[AccountModifierFunc] = None,
     ):
         """
         Initialize the Banco de Chile importer.
@@ -70,21 +62,18 @@ class BancoChileImporter(Importer):
             file_encoding: File encoding (default: utf-8)
             categorizer: Optional callable that takes (date, payee, narration,
                 amount, metadata) and returns:
-                - None for no categorization
-                - str (account name) for single posting
-                - List[Tuple[str, Decimal]] for multiple split postings
-            account_modifier: Optional callable that takes (date, payee, narration,
-                amount, metadata, category_result) and returns:
-                - None for no subaccount (use base account_name)
-                - str (subaccount suffix like "Car", "Emergency") to create
-                  virtual subaccounts (e.g., "Assets:BancoChile:Checking:Car")
+                - None for no categorization, no subaccount
+                - str (account name) for single posting, no subaccount
+                - List[Tuple[str, Decimal]] for multiple split postings, no subaccount
+                - Tuple[str, str] for (subaccount_suffix, category_account)
+                - Tuple[str, List[Tuple[str, Decimal]]] for (subaccount_suffix, split_postings)
+                - Tuple[str, None] for subaccount only, no category
         """
         self.account_number = account_number
         self.account_name = account_name
         self.currency = currency
         self.file_encoding = file_encoding
         self.categorizer = categorizer
-        self.account_modifier = account_modifier
         self.xls_extractor = BancoChileXLSExtractor()
         self.pdf_extractor = BancoChilePDFExtractor()
 
@@ -281,7 +270,7 @@ class BancoChileImporter(Importer):
 
         # Call categorizer if provided
         category_result = None
-        categorizer_subaccount = None
+        subaccount_suffix = None
         if self.categorizer:
             raw_result = self.categorizer(
                 transaction.date.date(),
@@ -293,31 +282,12 @@ class BancoChileImporter(Importer):
 
             # Check if categorizer returned a tuple with (subaccount, category/splits)
             if isinstance(raw_result, tuple) and len(raw_result) == 2:
-                categorizer_subaccount, category_result = raw_result
+                subaccount_suffix, category_result = raw_result
             else:
                 category_result = raw_result
 
-        # Call account_modifier if provided to determine the account name
-        # account_modifier can override the subaccount from categorizer
+        # Determine the account name with optional subaccount
         account_name = self.account_name
-        subaccount_suffix = (
-            categorizer_subaccount  # Start with categorizer's subaccount
-        )
-
-        if self.account_modifier:
-            modifier_result = self.account_modifier(
-                transaction.date.date(),
-                payee,
-                narration,
-                txn_amount,
-                categorizer_metadata,
-                category_result,
-            )
-            if modifier_result:
-                subaccount_suffix = (
-                    modifier_result  # Override with account_modifier result
-                )
-
         if subaccount_suffix:
             account_name = f"{self.account_name}:{subaccount_suffix}"
 

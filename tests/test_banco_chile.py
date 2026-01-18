@@ -329,151 +329,6 @@ class TestBancoChileImporter:
         assert len(categorized) >= 0
         assert len(uncategorized) >= 0
 
-    def test_account_modifier_alone(self):
-        """Test account_modifier without categorizer."""
-
-        def simple_account_modifier(
-            date, payee, narration, amount, metadata, category_result
-        ):
-            """Simple account modifier based on amount."""
-            # Large debits go to savings subaccount
-            if amount < -100000:
-                return "Savings"
-            # Credits to emergency fund
-            if amount > 0:
-                return "Emergency"
-            return None
-
-        importer = BancoChileImporter(
-            account_number="00-123-45678-90",
-            account_name="Assets:BancoChile:Checking",
-            account_modifier=simple_account_modifier,
-        )
-
-        entries = importer.extract(FIXTURE_PATH)
-        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
-
-        # Find large debits and credits
-        large_debits = [
-            txn
-            for txn in txn_entries
-            if txn.postings[0].units.number < Decimal("-100000")
-        ]
-        credits = [
-            txn for txn in txn_entries if txn.postings[0].units.number > Decimal("0")
-        ]
-
-        # Large debits should use Savings subaccount
-        for txn in large_debits:
-            assert txn.postings[0].account == "Assets:BancoChile:Checking:Savings"
-            # Should have only 1 posting (no categorization)
-            assert len(txn.postings) == 1
-
-        # Credits should use Emergency subaccount
-        for txn in credits:
-            assert txn.postings[0].account == "Assets:BancoChile:Checking:Emergency"
-            # Should have only 1 posting (no categorization)
-            assert len(txn.postings) == 1
-
-    def test_account_modifier_with_categorizer(self):
-        """Test account_modifier combined with categorizer."""
-
-        def my_categorizer(date, payee, narration, amount, metadata):
-            """Categorize all debits."""
-            if amount < 0:
-                return "Expenses:General"
-            return "Income:General"
-
-        def my_account_modifier(
-            date, payee, narration, amount, metadata, category_result
-        ):
-            """Use Car subaccount for all debits."""
-            if amount < 0:
-                return "Car"
-            return None
-
-        importer = BancoChileImporter(
-            account_number="00-123-45678-90",
-            account_name="Assets:BancoChile:Checking",
-            categorizer=my_categorizer,
-            account_modifier=my_account_modifier,
-        )
-
-        entries = importer.extract(FIXTURE_PATH)
-        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
-
-        # Find debit transactions
-        debit_txns = [
-            txn for txn in txn_entries if txn.postings[0].units.number < Decimal("0")
-        ]
-
-        for txn in debit_txns:
-            # Should have 2 postings (asset account + category)
-            assert len(txn.postings) == 2
-            # First posting should be the Car subaccount
-            assert txn.postings[0].account == "Assets:BancoChile:Checking:Car"
-            # Second posting should be the categorized expense
-            assert txn.postings[1].account == "Expenses:General"
-            # Amounts should balance
-            assert txn.postings[0].units.number + txn.postings[
-                1
-            ].units.number == Decimal("0")
-
-    def test_account_modifier_using_category_result(self):
-        """Test account_modifier using category_result to make decisions."""
-
-        def my_categorizer(date, payee, narration, amount, metadata):
-            """Categorize based on narration."""
-            if "STARLINK" in narration.upper() or "INTERNET" in narration.upper():
-                return "Expenses:Internet"
-            if amount < 0:
-                return "Expenses:General"
-            return None
-
-        def my_account_modifier(
-            date, payee, narration, amount, metadata, category_result
-        ):
-            """Use subaccount based on category."""
-            # If categorized as Internet, use Bills subaccount
-            if category_result and isinstance(category_result, str):
-                if "Internet" in category_result:
-                    return "Bills"
-            return None
-
-        importer = BancoChileImporter(
-            account_number="00-123-45678-90",
-            account_name="Assets:BancoChile:Checking",
-            categorizer=my_categorizer,
-            account_modifier=my_account_modifier,
-        )
-
-        entries = importer.extract(FIXTURE_PATH)
-        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
-
-        # Find transactions categorized as Internet
-        internet_txns = [
-            txn
-            for txn in txn_entries
-            if len(txn.postings) == 2 and txn.postings[1].account == "Expenses:Internet"
-        ]
-
-        # These should use the Bills subaccount
-        for txn in internet_txns:
-            assert txn.postings[0].account == "Assets:BancoChile:Checking:Bills"
-            assert txn.postings[1].account == "Expenses:Internet"
-
-        # Find other categorized transactions
-        other_txns = [
-            txn
-            for txn in txn_entries
-            if len(txn.postings) == 2 and txn.postings[1].account == "Expenses:General"
-        ]
-
-        # These should use the base account (no subaccount)
-        for txn in other_txns:
-            assert txn.postings[0].account == "Assets:BancoChile:Checking"
-            assert txn.postings[1].account == "Expenses:General"
-
     def test_categorizer_tuple_return_simple(self):
         """Test categorizer returning (subaccount, category) tuple."""
 
@@ -551,3 +406,48 @@ class TestBancoChileImporter:
             # Amounts should balance
             total = sum(posting.units.number for posting in txn.postings)
             assert total == Decimal("0")
+
+    def test_categorizer_tuple_return_subaccount_only(self):
+        """Test categorizer returning (subaccount, None) for subaccount without category."""
+
+        def subaccount_only_categorizer(date, payee, narration, amount, metadata):
+            """Return tuple with subaccount and None (no category)."""
+            if amount < -100000:  # Large debits
+                # Return (subaccount_suffix, None) - subaccount only, no category
+                return ("Savings", None)
+            if amount > 0:  # Credits
+                return ("Emergency", None)
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=subaccount_only_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Find large debits
+        large_debits = [
+            txn
+            for txn in txn_entries
+            if txn.postings[0].units.number < Decimal("-100000")
+        ]
+
+        for txn in large_debits:
+            # Should have 1 posting (subaccount only, no category)
+            assert len(txn.postings) == 1
+            # Should use Savings subaccount
+            assert txn.postings[0].account == "Assets:BancoChile:Checking:Savings"
+
+        # Find credits
+        credits = [
+            txn for txn in txn_entries if txn.postings[0].units.number > Decimal("0")
+        ]
+
+        for txn in credits:
+            # Should have 1 posting (subaccount only, no category)
+            assert len(txn.postings) == 1
+            # Should use Emergency subaccount
+            assert txn.postings[0].account == "Assets:BancoChile:Checking:Emergency"

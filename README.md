@@ -167,6 +167,7 @@ def categorizer(date, payee, narration, amount, metadata):
         - List[Tuple[str, Decimal]]: Multiple postings with (account, amount) pairs
         - Tuple[str, str]: (subaccount_suffix, category_account) - NEW in v0.5.0
         - Tuple[str, List[Tuple[str, Decimal]]]: (subaccount_suffix, split_postings) - NEW in v0.5.0
+        - Tuple[str, None]: (subaccount_suffix, None) - Subaccount without category - NEW in v0.5.0
     """
     # Your categorization logic here
     return "Expenses:Category" or None
@@ -419,174 +420,76 @@ When a categorizer returns a list of (account, amount) tuples, transactions can 
 5. **Use Metadata**: Leverage the metadata dict for more precise categorization rules
 6. **Combine Strategies**: Mix pattern matching, amount-based, and metadata-based logic as needed
 
-### Virtual Subaccounts with Account Modifier (NEW)
+### Virtual Subaccounts with Tuple Returns (NEW in v0.5.0)
 
-Both importers now support an optional `account_modifier` parameter that allows you to create virtual subaccounts on the asset/liability side. This is perfect for envelope budgeting or tracking earmarked funds.
+The categorizer can return a tuple to specify BOTH the subaccount and category in a single function. This is perfect for envelope budgeting or tracking earmarked funds.
 
-#### Account Modifier Function Signature
+#### Categorizer Tuple Return Types
 
-```python
-def account_modifier(date, payee, narration, amount, metadata, category_result):
-    """
-    Modify the account name to create virtual subaccounts.
+The categorizer can return different types to handle various scenarios:
 
-    Args:
-        date: Transaction date (datetime.date)
-        payee: Extracted payee name (str)
-        narration: Transaction description (str)
-        amount: Transaction amount (Decimal, negative for debits)
-        metadata: Dict with transaction-specific metadata
-        category_result: Output from categorizer (None, str, or List[Tuple[str, Decimal]])
-
-    Returns:
-        - None: Use base account (no subaccount)
-        - str: Subaccount suffix (e.g., "Car", "Emergency")
-    """
-    # Your logic here
-    return "SubaccountName" or None
-```
-
-#### Example: Simple Virtual Subaccounts
-
-```python
-def my_account_modifier(date, payee, narration, amount, metadata, category_result):
-    """Create virtual subaccounts for different purposes."""
-    # Car-related expenses
-    if "SHELL" in payee.upper() or "COPEC" in payee.upper():
-        return "Car"
-
-    # Large deposits go to emergency fund
-    if amount > 500000:
-        return "Emergency"
-
-    # Default: use main account
-    return None
-
-CONFIG = [
-    BancoChileImporter(
-        account_number="00-123-45678-90",
-        account_name="Assets:BancoChile:Checking",
-        currency="CLP",
-        account_modifier=my_account_modifier,
-    ),
-]
-```
-
-This creates transactions like:
-```beancount
-2026-01-05 * "Shell" "Shell Costanera"
-  channel: "Internet"
-  Assets:BancoChile:Checking:Car  -45000 CLP
-
-2026-01-10 * "Salary Deposit" "Monthly Salary"
-  channel: "Internet"
-  Assets:BancoChile:Checking:Emergency  600000 CLP
-```
-
-#### Example: Using Category Result
-
-The power of `account_modifier` comes from combining it with `categorizer`. The `category_result` parameter lets you see what the categorizer decided:
-
+**1. Tuple[str, str] - Subaccount + Category**
 ```python
 def my_categorizer(date, payee, narration, amount, metadata):
-    """Categorize expenses."""
+    """Return (subaccount_suffix, category_account)"""
     if "SHELL" in payee.upper() or "COPEC" in payee.upper():
-        return "Expenses:Car:Gas"
-    if "JUMBO" in payee.upper():
-        return "Expenses:Groceries"
-    return None
-
-def my_account_modifier(date, payee, narration, amount, metadata, category_result):
-    """Assign to subaccounts based on category."""
-    # If categorized as car expense, use Car subaccount
-    if category_result and isinstance(category_result, str):
-        if "Car" in category_result:
-            return "Car"
-        if "Groceries" in category_result:
-            return "Household"
-
-    # Default: main account
-    return None
-
-CONFIG = [
-    BancoChileImporter(
-        account_number="00-123-45678-90",
-        account_name="Assets:BancoChile:Checking",
-        currency="CLP",
-        categorizer=my_categorizer,
-        account_modifier=my_account_modifier,  # Receives categorizer output!
-    ),
-]
-```
-
-This creates:
-```beancount
-2026-01-05 * "Shell" "Shell Costanera"
-  channel: "Internet"
-  Assets:BancoChile:Checking:Car  -45000 CLP
-  Expenses:Car:Gas                 45000 CLP
-
-2026-01-08 * "Jumbo" "Supermercado Jumbo"
-  channel: "Internet"
-  Assets:BancoChile:Checking:Household  -120000 CLP
-  Expenses:Groceries                     120000 CLP
-```
-
-#### Example: Credit Card Subaccounts
-
-```python
-def card_account_modifier(date, payee, narration, amount, metadata, category_result):
-    """Separate personal vs business expenses."""
-    # Business expenses
-    if metadata.get("city") in ["PROVIDENCIA", "LAS CONDES"]:
-        return "Business"
-
-    # Personal expenses (billed transactions)
-    if metadata.get("statement_type") == "facturado":
-        return "Personal"
-
-    return None
-
-CONFIG = [
-    BancoChileCreditImporter(
-        card_last_four="1234",
-        account_name="Liabilities:CreditCard:BancoChile",
-        currency="CLP",
-        account_modifier=card_account_modifier,
-    ),
-]
-```
-
-This creates virtual liability subaccounts:
-```beancount
-2026-01-16 * "Office Supplies" "Office Depot"
-  statement_type: "facturado"
-  city: "PROVIDENCIA"
-  Liabilities:CreditCard:BancoChile:Business  50000 CLP
-
-2026-01-18 * "NETFLIX.COM" "NETFLIX.COM COMPRAS"
-  statement_type: "facturado"
-  city: "SANTIAGO"
-  Liabilities:CreditCard:BancoChile:Personal  12000 CLP
-```
-
-#### Simplified: Categorizer Returns Both (NEW in v0.5.0)
-
-Instead of using two separate functions, the categorizer can now return a tuple with BOTH the subaccount and category in one function:
-
-```python
-def my_categorizer(date, payee, narration, amount, metadata):
-    """Single function handles subaccount AND category!"""
-    if "SHELL" in payee.upper() or "COPEC" in payee.upper():
-        # Return (subaccount_suffix, category_account)
         return ("Car", "Expenses:Car:Gas")
+    return None
 
+# Creates: Assets:BancoChile:Checking:Car -> Expenses:Car:Gas
+```
+
+**2. Tuple[str, List[...]] - Subaccount + Split Postings**
+```python
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Return (subaccount_suffix, split_postings)"""
     if "JUMBO" in payee.upper():
-        # Return (subaccount_suffix, split_postings)
         return ("Household", [
             ("Expenses:Groceries", Decimal("40000")),
             ("Expenses:Household", Decimal("10000")),
         ])
+    return None
+
+# Creates: Assets:BancoChile:Checking:Household -> multiple expense accounts
+```
+
+**3. Tuple[str, None] - Subaccount Only (No Category)**
+```python
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Return (subaccount_suffix, None) for subaccount without auto-categorization"""
+    # Large deposits go to emergency fund, but don't categorize
+    if amount > 500000:
+        return ("Emergency", None)
+    return None
+
+# Creates: Assets:BancoChile:Checking:Emergency (single posting, no category)
+```
+
+#### Example: Combining All Return Types
+
+```python
+from decimal import Decimal
+
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Single function handles subaccount AND category!"""
+    # Subaccount + category
+    if "SHELL" in payee.upper() or "COPEC" in payee.upper():
+        return ("Car", "Expenses:Car:Gas")
+
+    # Subaccount + split postings
+    if "JUMBO" in payee.upper():
+        return ("Household", [
+            ("Expenses:Groceries", Decimal("40000")),
+            ("Expenses:Household", Decimal("10000")),
+        ])
+
+    # Subaccount only (no category)
+    if amount > 500000:
+        return ("Emergency", None)
+
+    # No subaccount, just category (backward compatible)
+    if "NETFLIX" in payee.upper():
+        return "Expenses:Streaming"
 
     return None  # No subaccount, no category
 
@@ -600,13 +503,18 @@ CONFIG = [
 ]
 ```
 
-This creates transactions like:
+#### Example Output
+
+**Subaccount + Category:**
 ```beancount
 2026-01-05 * "Shell" "Shell Costanera"
   channel: "Internet"
   Assets:BancoChile:Checking:Car  -45000 CLP
   Expenses:Car:Gas                 45000 CLP
+```
 
+**Subaccount + Split Postings:**
+```beancount
 2026-01-08 * "Jumbo" "Supermercado Jumbo"
   channel: "Internet"
   Assets:BancoChile:Checking:Household  -50000 CLP
@@ -614,7 +522,12 @@ This creates transactions like:
   Expenses:Household                     10000 CLP
 ```
 
-**Note**: You can still use `account_modifier` separately for advanced cases where you need different logic for subaccounts vs categories. The `account_modifier` will override any subaccount returned by the categorizer.
+**Subaccount Only:**
+```beancount
+2026-01-10 * "Salary Deposit" "Monthly Salary"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Emergency  600000 CLP
+```
 
 #### Use Cases
 

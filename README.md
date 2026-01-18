@@ -418,6 +418,164 @@ When a categorizer returns a list of (account, amount) tuples, transactions can 
 5. **Use Metadata**: Leverage the metadata dict for more precise categorization rules
 6. **Combine Strategies**: Mix pattern matching, amount-based, and metadata-based logic as needed
 
+### Virtual Subaccounts with Account Modifier (NEW)
+
+Both importers now support an optional `account_modifier` parameter that allows you to create virtual subaccounts on the asset/liability side. This is perfect for envelope budgeting or tracking earmarked funds.
+
+#### Account Modifier Function Signature
+
+```python
+def account_modifier(date, payee, narration, amount, metadata, category_result):
+    """
+    Modify the account name to create virtual subaccounts.
+
+    Args:
+        date: Transaction date (datetime.date)
+        payee: Extracted payee name (str)
+        narration: Transaction description (str)
+        amount: Transaction amount (Decimal, negative for debits)
+        metadata: Dict with transaction-specific metadata
+        category_result: Output from categorizer (None, str, or List[Tuple[str, Decimal]])
+
+    Returns:
+        - None: Use base account (no subaccount)
+        - str: Subaccount suffix (e.g., "Car", "Emergency")
+    """
+    # Your logic here
+    return "SubaccountName" or None
+```
+
+#### Example: Simple Virtual Subaccounts
+
+```python
+def my_account_modifier(date, payee, narration, amount, metadata, category_result):
+    """Create virtual subaccounts for different purposes."""
+    # Car-related expenses
+    if "SHELL" in payee.upper() or "COPEC" in payee.upper():
+        return "Car"
+
+    # Large deposits go to emergency fund
+    if amount > 500000:
+        return "Emergency"
+
+    # Default: use main account
+    return None
+
+CONFIG = [
+    BancoChileImporter(
+        account_number="00-123-45678-90",
+        account_name="Assets:BancoChile:Checking",
+        currency="CLP",
+        account_modifier=my_account_modifier,
+    ),
+]
+```
+
+This creates transactions like:
+```beancount
+2026-01-05 * "Shell" "Shell Costanera"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Car  -45000 CLP
+
+2026-01-10 * "Salary Deposit" "Monthly Salary"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Emergency  600000 CLP
+```
+
+#### Example: Using Category Result
+
+The power of `account_modifier` comes from combining it with `categorizer`. The `category_result` parameter lets you see what the categorizer decided:
+
+```python
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Categorize expenses."""
+    if "SHELL" in payee.upper() or "COPEC" in payee.upper():
+        return "Expenses:Car:Gas"
+    if "JUMBO" in payee.upper():
+        return "Expenses:Groceries"
+    return None
+
+def my_account_modifier(date, payee, narration, amount, metadata, category_result):
+    """Assign to subaccounts based on category."""
+    # If categorized as car expense, use Car subaccount
+    if category_result and isinstance(category_result, str):
+        if "Car" in category_result:
+            return "Car"
+        if "Groceries" in category_result:
+            return "Household"
+
+    # Default: main account
+    return None
+
+CONFIG = [
+    BancoChileImporter(
+        account_number="00-123-45678-90",
+        account_name="Assets:BancoChile:Checking",
+        currency="CLP",
+        categorizer=my_categorizer,
+        account_modifier=my_account_modifier,  # Receives categorizer output!
+    ),
+]
+```
+
+This creates:
+```beancount
+2026-01-05 * "Shell" "Shell Costanera"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Car  -45000 CLP
+  Expenses:Car:Gas                 45000 CLP
+
+2026-01-08 * "Jumbo" "Supermercado Jumbo"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Household  -120000 CLP
+  Expenses:Groceries                     120000 CLP
+```
+
+#### Example: Credit Card Subaccounts
+
+```python
+def card_account_modifier(date, payee, narration, amount, metadata, category_result):
+    """Separate personal vs business expenses."""
+    # Business expenses
+    if metadata.get("city") in ["PROVIDENCIA", "LAS CONDES"]:
+        return "Business"
+
+    # Personal expenses (billed transactions)
+    if metadata.get("statement_type") == "facturado":
+        return "Personal"
+
+    return None
+
+CONFIG = [
+    BancoChileCreditImporter(
+        card_last_four="1234",
+        account_name="Liabilities:CreditCard:BancoChile",
+        currency="CLP",
+        account_modifier=card_account_modifier,
+    ),
+]
+```
+
+This creates virtual liability subaccounts:
+```beancount
+2026-01-16 * "Office Supplies" "Office Depot"
+  statement_type: "facturado"
+  city: "PROVIDENCIA"
+  Liabilities:CreditCard:BancoChile:Business  50000 CLP
+
+2026-01-18 * "NETFLIX.COM" "NETFLIX.COM COMPRAS"
+  statement_type: "facturado"
+  city: "SANTIAGO"
+  Liabilities:CreditCard:BancoChile:Personal  12000 CLP
+```
+
+#### Use Cases
+
+- **Envelope Budgeting**: Track money earmarked for different purposes (Car, Vacation, Emergency)
+- **Savings Goals**: Separate virtual accounts for different savings objectives
+- **Business/Personal Separation**: Split credit card expenses by purpose
+- **Budget Categories**: Map transactions to budget envelopes automatically
+
 ## Development
 
 ### Running Tests

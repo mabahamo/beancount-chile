@@ -444,6 +444,49 @@ ruff check .
 - **Beancount**: 3.x only (no support for 2.x)
 - **OS**: macOS, Linux, Windows
 
+## Advanced Features
+
+### Account Modifier for Virtual Subaccounts
+
+Both `BancoChileImporter` and `BancoChileCreditImporter` support an optional `account_modifier` parameter that allows creating virtual subaccounts for envelope budgeting or tracking earmarked funds.
+
+**Function Signature:**
+```python
+def account_modifier(date, payee, narration, amount, metadata, category_result):
+    """
+    Args:
+        date: Transaction date
+        payee: Payee name
+        narration: Transaction description
+        amount: Transaction amount (Decimal)
+        metadata: Transaction metadata dict
+        category_result: Output from categorizer (None, str, or List[Tuple[str, Decimal]])
+
+    Returns:
+        str: Subaccount suffix (e.g., "Car", "Emergency")
+        None: Use base account (no subaccount)
+    """
+    return "SubaccountName" or None
+```
+
+**Key Points:**
+- Called AFTER categorizer (if both are provided)
+- Receives categorizer result as parameter
+- Modifies only the asset/liability account (first posting)
+- Can be used alone or combined with categorizer
+
+**Use Cases:**
+- Envelope budgeting (Car, Vacation, Emergency funds)
+- Savings goals tracking
+- Business/Personal expense separation
+- Budget category mapping
+
+**Example Flow:**
+1. Transaction imported
+2. Categorizer runs → determines expense category (e.g., "Expenses:Car:Gas")
+3. Account modifier runs → receives "Expenses:Car:Gas" → returns "Car"
+4. Final transaction: `Assets:BancoChile:Checking:Car` → `Expenses:Car:Gas`
+
 ## Future Improvements
 
 - [x] Add PDF parsing support for banks that only provide PDF statements (Banco de Chile done)

@@ -27,6 +27,13 @@ CategorizerReturn = Optional[Union[str, List[Tuple[str, Decimal]]]]
 # Type for the categorizer callable
 CategorizerFunc = Callable[[date_type, str, str, Decimal, dict], CategorizerReturn]
 
+# Type for the account_modifier callable
+# Takes the same parameters as categorizer plus the categorizer result
+# Returns an optional subaccount suffix (e.g., "Car", "Emergency")
+AccountModifierFunc = Callable[
+    [date_type, str, str, Decimal, dict, CategorizerReturn], Optional[str]
+]
+
 
 class BancoChileImporter(Importer):
     """Importer for Banco de Chile account statements (cartola).
@@ -41,6 +48,7 @@ class BancoChileImporter(Importer):
         currency: str = "CLP",
         file_encoding: str = "utf-8",
         categorizer: Optional[CategorizerFunc] = None,
+        account_modifier: Optional[AccountModifierFunc] = None,
     ):
         """
         Initialize the Banco de Chile importer.
@@ -56,12 +64,18 @@ class BancoChileImporter(Importer):
                 - None for no categorization
                 - str (account name) for single posting
                 - List[Tuple[str, Decimal]] for multiple split postings
+            account_modifier: Optional callable that takes (date, payee, narration,
+                amount, metadata, category_result) and returns:
+                - None for no subaccount (use base account_name)
+                - str (subaccount suffix like "Car", "Emergency") to create
+                  virtual subaccounts (e.g., "Assets:BancoChile:Checking:Car")
         """
         self.account_number = account_number
         self.account_name = account_name
         self.currency = currency
         self.file_encoding = file_encoding
         self.categorizer = categorizer
+        self.account_modifier = account_modifier
         self.xls_extractor = BancoChileXLSExtractor()
         self.pdf_extractor = BancoChilePDFExtractor()
 
@@ -248,26 +262,17 @@ class BancoChileImporter(Importer):
         meta = data.new_metadata(str(filepath), 0)
         meta["channel"] = transaction.channel
 
-        # Prepare postings list
-        postings = [
-            data.Posting(
-                account=self.account_name,
-                units=amount.Amount(txn_amount, self.currency),
-                cost=None,
-                price=None,
-                flag=None,
-                meta=None,
-            ),
-        ]
+        # Prepare metadata for categorizer and account_modifier
+        categorizer_metadata = {
+            "channel": transaction.channel,
+            "debit": transaction.debit,
+            "credit": transaction.credit,
+            "balance": transaction.balance,
+        }
 
         # Call categorizer if provided
+        category_result = None
         if self.categorizer:
-            categorizer_metadata = {
-                "channel": transaction.channel,
-                "debit": transaction.debit,
-                "credit": transaction.credit,
-                "balance": transaction.balance,
-            }
             category_result = self.categorizer(
                 transaction.date.date(),
                 payee,
@@ -276,33 +281,60 @@ class BancoChileImporter(Importer):
                 categorizer_metadata,
             )
 
-            if category_result:
-                # Handle both string and list returns
-                if isinstance(category_result, str):
-                    # Single category account (backward compatible)
+        # Call account_modifier if provided to determine the account name
+        account_name = self.account_name
+        if self.account_modifier:
+            subaccount_suffix = self.account_modifier(
+                transaction.date.date(),
+                payee,
+                narration,
+                txn_amount,
+                categorizer_metadata,
+                category_result,
+            )
+            if subaccount_suffix:
+                account_name = f"{self.account_name}:{subaccount_suffix}"
+
+        # Prepare postings list with the (possibly modified) account name
+        postings = [
+            data.Posting(
+                account=account_name,
+                units=amount.Amount(txn_amount, self.currency),
+                cost=None,
+                price=None,
+                flag=None,
+                meta=None,
+            ),
+        ]
+
+        # Add categorization postings if categorizer returned a result
+        if category_result:
+            # Handle both string and list returns
+            if isinstance(category_result, str):
+                # Single category account (backward compatible)
+                postings.append(
+                    data.Posting(
+                        account=category_result,
+                        units=amount.Amount(-txn_amount, self.currency),
+                        cost=None,
+                        price=None,
+                        flag=None,
+                        meta=None,
+                    )
+                )
+            elif isinstance(category_result, list):
+                # Multiple split postings
+                for category_account, category_amount in category_result:
                     postings.append(
                         data.Posting(
-                            account=category_result,
-                            units=amount.Amount(-txn_amount, self.currency),
+                            account=category_account,
+                            units=amount.Amount(category_amount, self.currency),
                             cost=None,
                             price=None,
                             flag=None,
                             meta=None,
                         )
                     )
-                elif isinstance(category_result, list):
-                    # Multiple split postings
-                    for category_account, category_amount in category_result:
-                        postings.append(
-                            data.Posting(
-                                account=category_account,
-                                units=amount.Amount(category_amount, self.currency),
-                                cost=None,
-                                price=None,
-                                flag=None,
-                                meta=None,
-                            )
-                        )
 
         # Create transaction
         txn = data.Transaction(

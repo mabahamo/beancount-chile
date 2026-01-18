@@ -500,3 +500,122 @@ class TestBancoChileCreditImporter:
             # Verify amounts balance
             total = sum(posting.units.number for posting in txn.postings)
             assert total == Decimal("0")
+
+    def test_account_modifier_alone(self):
+        """Test account_modifier without categorizer."""
+
+        def simple_account_modifier(date, payee, narration, amount, metadata, category_result):
+            """Simple account modifier based on statement type."""
+            # Use Personal subaccount for billed transactions
+            if metadata.get("statement_type") == "facturado":
+                return "Personal"
+            # Use Business subaccount for unbilled transactions
+            if metadata.get("statement_type") == "no_facturado":
+                return "Business"
+            return None
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            account_modifier=simple_account_modifier,
+        )
+
+        # Test facturado
+        entries_facturado = importer.extract(FIXTURE_FACTURADO)
+        txn_facturado = [
+            e for e in entries_facturado if e.__class__.__name__ == "Transaction"
+        ]
+        for txn in txn_facturado:
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Personal"
+            # Should have only 1 posting (no categorization)
+            assert len(txn.postings) == 1
+
+        # Test no facturado
+        entries_no_facturado = importer.extract(FIXTURE_NO_FACTURADO)
+        txn_no_facturado = [
+            e for e in entries_no_facturado if e.__class__.__name__ == "Transaction"
+        ]
+        for txn in txn_no_facturado:
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Business"
+            # Should have only 1 posting (no categorization)
+            assert len(txn.postings) == 1
+
+    def test_account_modifier_with_categorizer(self):
+        """Test account_modifier combined with categorizer."""
+
+        def my_categorizer(date, payee, narration, amount, metadata):
+            """Categorize all transactions."""
+            return "Expenses:General"
+
+        def my_account_modifier(date, payee, narration, amount, metadata, category_result):
+            """Use Card1 subaccount for all transactions."""
+            return "Card1"
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=my_categorizer,
+            account_modifier=my_account_modifier,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        for txn in txn_entries:
+            # Should have 2 postings (credit card account + category)
+            assert len(txn.postings) == 2
+            # First posting should be the Card1 subaccount
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Card1"
+            # Second posting should be the categorized expense
+            assert txn.postings[1].account == "Expenses:General"
+            # Amounts should balance
+            assert txn.postings[0].units.number + txn.postings[1].units.number == Decimal("0")
+
+    def test_account_modifier_using_category_result(self):
+        """Test account_modifier using category_result to make decisions."""
+
+        def my_categorizer(date, payee, narration, amount, metadata):
+            """Categorize based on narration."""
+            if "NETFLIX" in narration.upper() or "STREAMING" in narration.upper():
+                return "Expenses:Streaming"
+            return "Expenses:General"
+
+        def my_account_modifier(date, payee, narration, amount, metadata, category_result):
+            """Use subaccount based on category."""
+            # If categorized as Streaming, use Entertainment subaccount
+            if category_result and isinstance(category_result, str):
+                if "Streaming" in category_result:
+                    return "Entertainment"
+            return None
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=my_categorizer,
+            account_modifier=my_account_modifier,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Find transactions categorized as Streaming
+        streaming_txns = [
+            txn for txn in txn_entries
+            if len(txn.postings) == 2 and txn.postings[1].account == "Expenses:Streaming"
+        ]
+
+        # These should use the Entertainment subaccount
+        for txn in streaming_txns:
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Entertainment"
+            assert txn.postings[1].account == "Expenses:Streaming"
+
+        # Find other categorized transactions
+        other_txns = [
+            txn for txn in txn_entries
+            if len(txn.postings) == 2 and txn.postings[1].account == "Expenses:General"
+        ]
+
+        # These should use the base account (no subaccount)
+        for txn in other_txns:
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
+            assert txn.postings[1].account == "Expenses:General"

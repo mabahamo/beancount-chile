@@ -4,7 +4,7 @@ from datetime import date as date_type
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 from beancount.core import amount, data, flags
 from beancount.core.number import D
@@ -18,20 +18,13 @@ from beancount_chile.extractors.banco_chile_xls import (
 from beancount_chile.helpers import clean_narration, normalize_payee
 
 # Type alias for categorizer return value
-# Can return:
-# - None: no categorization, no subaccount
-# - str: single category account (no subaccount)
-# - List[Tuple[str, Decimal]]: multiple postings (no subaccount)
-# - Tuple[str, str]: (subaccount_suffix, category_account)
-# - Tuple[str, List[Tuple[str, Decimal]]]: (subaccount, splits)
-# - Tuple[str, None]: (subaccount_suffix, no category)
-CategorizerReturn = Optional[
-    Union[
-        str,
-        List[Tuple[str, Decimal]],
-        Tuple[str, Optional[Union[str, List[Tuple[str, Decimal]]]]],
-    ]
-]
+# Returns a dict with optional fields:
+# - category: str - single category account
+# - payee: str - override transaction payee
+# - narration: str - override transaction narration
+# - subaccount: str - subaccount suffix for main account
+# - postings: List[Dict] - for splits, each with 'category' and 'amount'
+CategorizerReturn = Optional[Dict[str, Any]]
 
 # Type for the categorizer callable
 CategorizerFunc = Callable[[date_type, str, str, Decimal, dict], CategorizerReturn]
@@ -61,13 +54,13 @@ class BancoChileImporter(Importer):
             currency: Currency code (default: CLP)
             file_encoding: File encoding (default: utf-8)
             categorizer: Optional callable that takes (date, payee, narration,
-                amount, metadata) and returns:
-                - None for no categorization, no subaccount
-                - str (account name) for single posting, no subaccount
-                - List[Tuple[str, Decimal]] for split postings, no subaccount
-                - Tuple[str, str] for (subaccount_suffix, category_account)
-                - Tuple[str, List[Tuple[str, Decimal]]] for (subaccount, splits)
-                - Tuple[str, None] for subaccount only, no category
+                amount, metadata) and returns a dict with optional fields:
+                - category: str - single category account
+                - payee: str - override transaction payee
+                - narration: str - override transaction narration
+                - subaccount: str - subaccount suffix
+                - postings: List[Dict] - for splits, each with 'category' and 'amount'
+                Returns None for no categorization
         """
         self.account_number = account_number
         self.account_name = account_name
@@ -252,7 +245,7 @@ class BancoChileImporter(Importer):
             # No amount, skip
             return None
 
-        # Extract payee and narration
+        # Extract payee and narration (defaults)
         payee = normalize_payee(transaction.description)
         narration = clean_narration(transaction.description)
 
@@ -260,7 +253,7 @@ class BancoChileImporter(Importer):
         meta = data.new_metadata(str(filepath), 0)
         meta["channel"] = transaction.channel
 
-        # Prepare metadata for categorizer and account_modifier
+        # Prepare metadata for categorizer
         categorizer_metadata = {
             "channel": transaction.channel,
             "debit": transaction.debit,
@@ -269,10 +262,9 @@ class BancoChileImporter(Importer):
         }
 
         # Call categorizer if provided
-        category_result = None
-        subaccount_suffix = None
+        categorizer_result = None
         if self.categorizer:
-            raw_result = self.categorizer(
+            categorizer_result = self.categorizer(
                 transaction.date.date(),
                 payee,
                 narration,
@@ -280,11 +272,29 @@ class BancoChileImporter(Importer):
                 categorizer_metadata,
             )
 
-            # Check if categorizer returned a tuple with (subaccount, category/splits)
-            if isinstance(raw_result, tuple) and len(raw_result) == 2:
-                subaccount_suffix, category_result = raw_result
-            else:
-                category_result = raw_result
+        # Extract overrides from categorizer result
+        subaccount_suffix = None
+        category_account = None
+        split_postings = None
+
+        if categorizer_result:
+            # Override payee if provided
+            if "payee" in categorizer_result:
+                payee = categorizer_result["payee"]
+
+            # Override narration if provided
+            if "narration" in categorizer_result:
+                narration = categorizer_result["narration"]
+
+            # Get subaccount suffix if provided
+            if "subaccount" in categorizer_result:
+                subaccount_suffix = categorizer_result["subaccount"]
+
+            # Get category or postings
+            if "postings" in categorizer_result:
+                split_postings = categorizer_result["postings"]
+            elif "category" in categorizer_result:
+                category_account = categorizer_result["category"]
 
         # Determine the account name with optional subaccount
         account_name = self.account_name
@@ -303,34 +313,32 @@ class BancoChileImporter(Importer):
             ),
         ]
 
-        # Add categorization postings if categorizer returned a result
-        if category_result:
-            # Handle both string and list returns
-            if isinstance(category_result, str):
-                # Single category account (backward compatible)
+        # Add categorization postings
+        if split_postings:
+            # Multiple split postings
+            for posting_dict in split_postings:
                 postings.append(
                     data.Posting(
-                        account=category_result,
-                        units=amount.Amount(-txn_amount, self.currency),
+                        account=posting_dict["category"],
+                        units=amount.Amount(posting_dict["amount"], self.currency),
                         cost=None,
                         price=None,
                         flag=None,
                         meta=None,
                     )
                 )
-            elif isinstance(category_result, list):
-                # Multiple split postings
-                for category_account, category_amount in category_result:
-                    postings.append(
-                        data.Posting(
-                            account=category_account,
-                            units=amount.Amount(category_amount, self.currency),
-                            cost=None,
-                            price=None,
-                            flag=None,
-                            meta=None,
-                        )
-                    )
+        elif category_account:
+            # Single category account
+            postings.append(
+                data.Posting(
+                    account=category_account,
+                    units=amount.Amount(-txn_amount, self.currency),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                )
+            )
 
         # Create transaction
         txn = data.Transaction(

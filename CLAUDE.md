@@ -446,135 +446,138 @@ ruff check .
 
 ## Advanced Features
 
-### Categorizer Tuple Returns (v0.5.0)
+### Categorizer Dict Returns (v0.6.0 - BREAKING CHANGE)
 
-Starting in v0.5.0, categorizers can return tuples to specify both the subaccount suffix and the category in a single function. This provides a unified way to handle virtual subaccounts for envelope budgeting or tracking earmarked funds.
+Starting in v0.6.0, categorizers use a simplified dict-based API instead of complex tuples. This breaking change makes the API much easier to use and remember.
 
 **Type Alias:**
 ```python
-CategorizerReturn = Optional[
-    Union[
-        str,                                      # Single category (backward compatible)
-        List[Tuple[str, Decimal]],                # Split postings (backward compatible)
-        Tuple[str, str],                          # (subaccount_suffix, category_account) - NEW!
-        Tuple[str, List[Tuple[str, Decimal]]],    # (subaccount_suffix, split_postings) - NEW!
-        Tuple[str, None],                         # (subaccount_suffix, None) - Subaccount only - NEW!
-    ]
-]
+CategorizerReturn = Optional[Dict[str, Any]]
 ```
 
-**Return Types:**
+**Dict Fields (all optional):**
+- `category`: str - Single category account
+- `payee`: str - Override transaction payee
+- `narration`: str - Override transaction narration
+- `subaccount`: str - Subaccount suffix for main account
+- `postings`: List[Dict] - For splits, each dict with 'category' and 'amount' keys
 
-1. **Simple Tuple**: `Tuple[str, str]`
-   - First element: Subaccount suffix (e.g., "Car", "Household")
-   - Second element: Category account (e.g., "Expenses:Car:Gas")
+**Return Examples:**
+
+1. **Simple Category**
    ```python
    def categorizer(date, payee, narration, amount, metadata):
        if "SHELL" in payee.upper():
-           return ("Car", "Expenses:Car:Gas")  # Tuple!
+           return {"category": "Expenses:Car:Gas"}
+       return None
+   ```
+   Result: Single posting to category account
+
+2. **Category with Subaccount**
+   ```python
+   def categorizer(date, payee, narration, amount, metadata):
+       if "SHELL" in payee.upper():
+           return {
+               "subaccount": "Car",
+               "category": "Expenses:Car:Gas"
+           }
        return None
    ```
    Result: `Assets:BancoChile:Checking:Car` → `Expenses:Car:Gas`
 
-2. **Tuple with Split Postings**: `Tuple[str, List[Tuple[str, Decimal]]]`
-   - First element: Subaccount suffix
-   - Second element: List of (account, amount) pairs for split postings
+3. **Split Postings with Subaccount**
    ```python
    def categorizer(date, payee, narration, amount, metadata):
        if "JUMBO" in payee.upper():
-           return ("Household", [
-               ("Expenses:Groceries", -amount * Decimal("0.6")),
-               ("Expenses:Household", -amount * Decimal("0.4")),
-           ])
+           return {
+               "subaccount": "Household",
+               "postings": [
+                   {"category": "Expenses:Groceries", "amount": Decimal("40000")},
+                   {"category": "Expenses:Household", "amount": Decimal("10000")},
+               ]
+           }
        return None
    ```
    Result: `Assets:BancoChile:Checking:Household` → split across multiple expense accounts
 
-3. **Subaccount Only**: `Tuple[str, None]`
-   - First element: Subaccount suffix
-   - Second element: None (no automatic categorization)
+4. **Override Payee and Narration**
+   ```python
+   def categorizer(date, payee, narration, amount, metadata):
+       if "NETFLIX" in payee.upper():
+           return {
+               "category": "Expenses:Streaming",
+               "payee": "Netflix",
+               "narration": "Monthly subscription"
+           }
+       return None
+   ```
+   Result: Transaction with custom payee and narration
+
+5. **Subaccount Only (No Category)**
    ```python
    def categorizer(date, payee, narration, amount, metadata):
        # Large deposits to emergency fund, but don't categorize
        if amount > 500000:
-           return ("Emergency", None)
+           return {"subaccount": "Emergency"}
        return None
    ```
    Result: `Assets:BancoChile:Checking:Emergency` → single posting, no category added
 
-**Implementation Details:**
-
-The importer detects tuple returns with runtime type checking:
-```python
-# In _create_transaction_entry:
-category_result = None
-categorizer_subaccount = None
-
-if self.categorizer:
-    raw_result = self.categorizer(...)
-
-    # Check if categorizer returned a tuple with (subaccount, category/splits/None)
-    if isinstance(raw_result, tuple) and len(raw_result) == 2:
-        categorizer_subaccount, category_result = raw_result
-    else:
-        category_result = raw_result
-
-# Apply subaccount suffix if provided
-if categorizer_subaccount:
-    account_name = f"{self.account_name}:{categorizer_subaccount}"
-else:
-    account_name = self.account_name
-```
-
-**Backward Compatibility:**
-
-All existing categorizers continue to work unchanged:
-- Returning `None` → No categorization
-- Returning `str` → Single category account
-- Returning `List[Tuple[str, Decimal]]` → Split postings
-
 **Use Cases:**
 
-| Scenario | Return Type | Example |
+| Scenario | Dict Fields | Example |
 |----------|-------------|---------|
-| Simple expense categorization | `str` | `"Expenses:Groceries"` |
-| Split postings across categories | `List[Tuple[str, Decimal]]` | `[("Expenses:A", 100), ("Expenses:B", 50)]` |
-| Subaccount + category | `Tuple[str, str]` | `("Car", "Expenses:Car:Gas")` |
-| Subaccount + split postings | `Tuple[str, List[...]]` | `("Household", [(account, amount), ...])` |
-| Subaccount only (no category) | `Tuple[str, None]` | `("Emergency", None)` |
+| Simple expense categorization | `category` | `{"category": "Expenses:Groceries"}` |
+| Split postings across categories | `postings` | `{"postings": [{"category": "Expenses:A", "amount": ...}, ...]}` |
+| Subaccount + category | `subaccount`, `category` | `{"subaccount": "Car", "category": "Expenses:Car:Gas"}` |
+| Subaccount + split postings | `subaccount`, `postings` | `{"subaccount": "Household", "postings": [...]}` |
+| Subaccount only (no category) | `subaccount` | `{"subaccount": "Emergency"}` |
+| Override transaction details | `payee`, `narration` | `{"payee": "Netflix", "narration": "Subscription"}` |
 
-**Example: Complete Categorizer with All Return Types**
+**Example: Complete Categorizer with All Options**
 
 ```python
 from decimal import Decimal
 
 def my_categorizer(date, payee, narration, amount, metadata):
-    """Complete example showing all return types."""
+    """Complete example showing all categorizer options."""
     # Subaccount + category
     if "SHELL" in payee.upper():
-        return ("Car", "Expenses:Car:Gas")
+        return {
+            "subaccount": "Car",
+            "category": "Expenses:Car:Gas"
+        }
 
     # Subaccount + split postings
     if "JUMBO" in payee.upper():
-        return ("Household", [
-            ("Expenses:Groceries", Decimal("40000")),
-            ("Expenses:Household", Decimal("10000")),
-        ])
+        return {
+            "subaccount": "Household",
+            "postings": [
+                {"category": "Expenses:Groceries", "amount": Decimal("40000")},
+                {"category": "Expenses:Household", "amount": Decimal("10000")},
+            ]
+        }
 
     # Subaccount only (no category)
     if amount > 500000:
-        return ("Emergency", None)
+        return {"subaccount": "Emergency"}
 
-    # Just category (no subaccount) - backward compatible
+    # Just category with custom payee and narration
     if "NETFLIX" in payee.upper():
-        return "Expenses:Streaming"
+        return {
+            "category": "Expenses:Streaming",
+            "payee": "Netflix",
+            "narration": "Monthly subscription"
+        }
 
-    # Split without subaccount - backward compatible
+    # Split postings without subaccount
     if "PHARMACY" in payee.upper():
-        return [
-            ("Expenses:Health:Medicine", Decimal("15000")),
-            ("Expenses:Health:Personal", -amount - Decimal("15000")),
-        ]
+        return {
+            "postings": [
+                {"category": "Expenses:Health:Medicine", "amount": Decimal("15000")},
+                {"category": "Expenses:Health:Personal", "amount": -amount - Decimal("15000")},
+            ]
+        }
 
     # No categorization
     return None

@@ -343,13 +343,13 @@ class TestBancoChileCreditImporter:
         assert "installments" in txn_no_facturado.meta
         # City may or may not be present depending on transaction
 
-    def test_categorizer_single_string(self):
-        """Test categorizer with single string return (backward compatibility)."""
+    def test_categorizer_simple_category(self):
+        """Test categorizer with simple category dict return."""
 
         def simple_categorizer(date, payee, narration, amount, metadata):
-            """Simple categorizer that returns a single account."""
+            """Simple categorizer that returns a dict with category."""
             # Credit card amounts are positive (increase liability)
-            return "Expenses:CreditCard"
+            return {"category": "Expenses:CreditCard"}
 
         importer = BancoChileCreditImporter(
             card_last_four="1234",
@@ -393,17 +393,25 @@ class TestBancoChileCreditImporter:
             assert len(txn.postings) == 1
             assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
 
-    def test_categorizer_list_split(self):
-        """Test categorizer with list return (transaction splitting)."""
+    def test_categorizer_split_postings(self):
+        """Test categorizer with split postings dict return."""
 
         def split_categorizer(date, payee, narration, amount, metadata):
             """Categorizer that splits credit card transactions."""
             # Credit card amounts are positive, so we split them as negative
             # Split 70/30 between two categories
-            return [
-                ("Expenses:Category1", -amount * Decimal("0.7")),
-                ("Expenses:Category2", -amount * Decimal("0.3")),
-            ]
+            return {
+                "postings": [
+                    {
+                        "category": "Expenses:Category1",
+                        "amount": -amount * Decimal("0.7"),
+                    },
+                    {
+                        "category": "Expenses:Category2",
+                        "amount": -amount * Decimal("0.3"),
+                    },
+                ]
+            }
 
         importer = BancoChileCreditImporter(
             card_last_four="1234",
@@ -441,7 +449,7 @@ class TestBancoChileCreditImporter:
             """Categorizer that behaves differently for billed vs unbilled."""
             # Only categorize billed transactions
             if metadata.get("statement_type") == "facturado":
-                return "Expenses:Billed"
+                return {"category": "Expenses:Billed"}
             # Don't categorize unbilled
             return None
 
@@ -468,17 +476,19 @@ class TestBancoChileCreditImporter:
         for txn in txn_no_facturado:
             assert len(txn.postings) == 1  # Not categorized
 
-    def test_categorizer_list_multiple_splits(self):
+    def test_categorizer_multiple_split_postings(self):
         """Test categorizer with multiple split categories."""
 
         def multi_split_categorizer(date, payee, narration, amount, metadata):
             """Categorizer that splits into 3 categories."""
             # Split into 3 categories: 50%, 30%, 20%
-            return [
-                ("Expenses:Cat1", -amount * Decimal("0.5")),
-                ("Expenses:Cat2", -amount * Decimal("0.3")),
-                ("Expenses:Cat3", -amount * Decimal("0.2")),
-            ]
+            return {
+                "postings": [
+                    {"category": "Expenses:Cat1", "amount": -amount * Decimal("0.5")},
+                    {"category": "Expenses:Cat2", "amount": -amount * Decimal("0.3")},
+                    {"category": "Expenses:Cat3", "amount": -amount * Decimal("0.2")},
+                ]
+            }
 
         importer = BancoChileCreditImporter(
             card_last_four="1234",
@@ -501,18 +511,17 @@ class TestBancoChileCreditImporter:
             total = sum(posting.units.number for posting in txn.postings)
             assert total == Decimal("0")
 
-    def test_categorizer_tuple_return_simple(self):
-        """Test categorizer returning (subaccount, category) tuple."""
+    def test_categorizer_with_subaccount_and_category(self):
+        """Test categorizer with subaccount and category dict return."""
 
-        def tuple_categorizer(date, payee, narration, amount, metadata):
-            """Return tuple with subaccount and category."""
-            # Return (subaccount_suffix, category_account)
-            return ("Personal", "Expenses:Shopping")
+        def subaccount_categorizer(date, payee, narration, amount, metadata):
+            """Return dict with subaccount and category."""
+            return {"subaccount": "Personal", "category": "Expenses:Shopping"}
 
         importer = BancoChileCreditImporter(
             card_last_four="1234",
             account_name="Liabilities:CreditCard:BancoChile",
-            categorizer=tuple_categorizer,
+            categorizer=subaccount_categorizer,
         )
 
         entries = importer.extract(FIXTURE_FACTURADO)
@@ -532,25 +541,30 @@ class TestBancoChileCreditImporter:
                 1
             ].units.number == Decimal("0")
 
-    def test_categorizer_tuple_return_with_splits(self):
-        """Test categorizer returning (subaccount, split_postings) tuple."""
+    def test_categorizer_with_subaccount_and_split_postings(self):
+        """Test categorizer with subaccount and split postings dict return."""
 
-        def tuple_split_categorizer(date, payee, narration, amount, metadata):
-            """Return tuple with subaccount and split postings."""
-            # Return (subaccount_suffix, split_postings)
+        def subaccount_split_categorizer(date, payee, narration, amount, metadata):
+            """Return dict with subaccount and split postings."""
             # Credit card amounts are positive, so split amounts should be negative
-            return (
-                "Business",
-                [
-                    ("Expenses:Office", -amount * Decimal("0.7")),
-                    ("Expenses:Software", -amount * Decimal("0.3")),
+            return {
+                "subaccount": "Business",
+                "postings": [
+                    {
+                        "category": "Expenses:Office",
+                        "amount": -amount * Decimal("0.7"),
+                    },
+                    {
+                        "category": "Expenses:Software",
+                        "amount": -amount * Decimal("0.3"),
+                    },
                 ],
-            )
+            }
 
         importer = BancoChileCreditImporter(
             card_last_four="1234",
             account_name="Liabilities:CreditCard:BancoChile",
-            categorizer=tuple_split_categorizer,
+            categorizer=subaccount_split_categorizer,
         )
 
         entries = importer.extract(FIXTURE_FACTURADO)
@@ -570,16 +584,16 @@ class TestBancoChileCreditImporter:
             total = sum(posting.units.number for posting in txn.postings)
             assert total == Decimal("0")
 
-    def test_categorizer_tuple_return_subaccount_only(self):
-        """Test categorizer returning (subaccount, None) - no category."""
+    def test_categorizer_subaccount_only(self):
+        """Test categorizer with subaccount only (no category) dict return."""
 
         def subaccount_only_categorizer(date, payee, narration, amount, metadata):
-            """Return tuple with subaccount and None (no category)."""
+            """Return dict with subaccount only (no category)."""
             # Use Personal subaccount for billed, Business for unbilled
             if metadata.get("statement_type") == "facturado":
-                return ("Personal", None)
+                return {"subaccount": "Personal"}
             if metadata.get("statement_type") == "no_facturado":
-                return ("Business", None)
+                return {"subaccount": "Business"}
             return None
 
         importer = BancoChileCreditImporter(

@@ -402,8 +402,14 @@ class TestBancoChileCreditImporter:
             # Split 70/30 between two categories
             return {
                 "postings": [
-                    {"category": "Expenses:Category1", "amount": -amount * Decimal("0.7")},
-                    {"category": "Expenses:Category2", "amount": -amount * Decimal("0.3")},
+                    {
+                        "category": "Expenses:Category1",
+                        "amount": -amount * Decimal("0.7"),
+                    },
+                    {
+                        "category": "Expenses:Category2",
+                        "amount": -amount * Decimal("0.3"),
+                    },
                 ]
             }
 
@@ -547,8 +553,14 @@ class TestBancoChileCreditImporter:
             return {
                 "subaccount": "Business",
                 "postings": [
-                    {"category": "Expenses:Office", "amount": -amount * Decimal("0.7")},
-                    {"category": "Expenses:Software", "amount": -amount * Decimal("0.3")},
+                    {
+                        "category": "Expenses:Office",
+                        "amount": -amount * Decimal("0.7"),
+                    },
+                    {
+                        "category": "Expenses:Software",
+                        "amount": -amount * Decimal("0.3"),
+                    },
                 ]
             }
 

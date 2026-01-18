@@ -4,7 +4,7 @@ from datetime import date as date_type
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 from beancount.core import amount, data, flags
 from beancount.core.number import D

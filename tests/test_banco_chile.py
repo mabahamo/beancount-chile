@@ -223,8 +223,14 @@ class TestBancoChileImporter:
                 # Split 60/40 between two categories
                 return {
                     "postings": [
-                        {"category": "Expenses:Category1", "amount": -amount * Decimal("0.6")},
-                        {"category": "Expenses:Category2", "amount": -amount * Decimal("0.4")},
+                        {
+                            "category": "Expenses:Category1",
+                            "amount": -amount * Decimal("0.6"),
+                        },
+                        {
+                            "category": "Expenses:Category2",
+                            "amount": -amount * Decimal("0.4"),
+                        },
                     ]
                 }
             return None
@@ -273,9 +279,18 @@ class TestBancoChileImporter:
                 # Split into 3 categories: 50%, 30%, 20%
                 return {
                     "postings": [
-                        {"category": "Expenses:Cat1", "amount": -amount * Decimal("0.5")},
-                        {"category": "Expenses:Cat2", "amount": -amount * Decimal("0.3")},
-                        {"category": "Expenses:Cat3", "amount": -amount * Decimal("0.2")},
+                        {
+                            "category": "Expenses:Cat1",
+                            "amount": -amount * Decimal("0.5"),
+                        },
+                        {
+                            "category": "Expenses:Cat2",
+                            "amount": -amount * Decimal("0.3"),
+                        },
+                        {
+                            "category": "Expenses:Cat3",
+                            "amount": -amount * Decimal("0.2"),
+                        },
                     ]
                 }
             return None
@@ -380,8 +395,14 @@ class TestBancoChileImporter:
                 return {
                     "subaccount": "Household",
                     "postings": [
-                        {"category": "Expenses:Groceries", "amount": -amount * Decimal("0.6")},
-                        {"category": "Expenses:Household", "amount": -amount * Decimal("0.4")},
+                        {
+                            "category": "Expenses:Groceries",
+                            "amount": -amount * Decimal("0.6"),
+                        },
+                        {
+                            "category": "Expenses:Household",
+                            "amount": -amount * Decimal("0.4"),
+                        },
                     ]
                 }
             return None

@@ -163,14 +163,14 @@ class TestBancoChileImporter:
         for txn in txn_entries:
             assert txn.postings[0].units.currency == "CLP"
 
-    def test_categorizer_single_string(self):
-        """Test categorizer with single string return (backward compatibility)."""
+    def test_categorizer_simple_category(self):
+        """Test categorizer with simple category dict return."""
 
         def simple_categorizer(date, payee, narration, amount, metadata):
-            """Simple categorizer that returns a single account."""
+            """Simple categorizer that returns a dict with category."""
             if amount < 0:  # Debit
-                return "Expenses:General"
-            return "Income:General"
+                return {"category": "Expenses:General"}
+            return {"category": "Income:General"}
 
         importer = BancoChileImporter(
             account_number="00-123-45678-90",
@@ -214,17 +214,19 @@ class TestBancoChileImporter:
             assert len(txn.postings) == 1
             assert txn.postings[0].account == "Assets:BancoChile:Checking"
 
-    def test_categorizer_list_split(self):
-        """Test categorizer with list return (transaction splitting)."""
+    def test_categorizer_split_postings(self):
+        """Test categorizer with split postings dict return."""
 
         def split_categorizer(date, payee, narration, amount, metadata):
             """Categorizer that splits transactions."""
             if amount < 0:  # Debit
                 # Split 60/40 between two categories
-                return [
-                    ("Expenses:Category1", -amount * Decimal("0.6")),
-                    ("Expenses:Category2", -amount * Decimal("0.4")),
-                ]
+                return {
+                    "postings": [
+                        {"category": "Expenses:Category1", "amount": -amount * Decimal("0.6")},
+                        {"category": "Expenses:Category2", "amount": -amount * Decimal("0.4")},
+                    ]
+                }
             return None
 
         importer = BancoChileImporter(
@@ -262,18 +264,20 @@ class TestBancoChileImporter:
             # Total should balance to zero
             assert account_amount + cat1_amount + cat2_amount == Decimal("0")
 
-    def test_categorizer_list_multiple_splits(self):
+    def test_categorizer_multiple_split_postings(self):
         """Test categorizer with multiple split categories."""
 
         def multi_split_categorizer(date, payee, narration, amount, metadata):
             """Categorizer that splits into 3 categories."""
             if amount < 0:  # Debit
                 # Split into 3 categories: 50%, 30%, 20%
-                return [
-                    ("Expenses:Cat1", -amount * Decimal("0.5")),
-                    ("Expenses:Cat2", -amount * Decimal("0.3")),
-                    ("Expenses:Cat3", -amount * Decimal("0.2")),
-                ]
+                return {
+                    "postings": [
+                        {"category": "Expenses:Cat1", "amount": -amount * Decimal("0.5")},
+                        {"category": "Expenses:Cat2", "amount": -amount * Decimal("0.3")},
+                        {"category": "Expenses:Cat3", "amount": -amount * Decimal("0.2")},
+                    ]
+                }
             return None
 
         importer = BancoChileImporter(
@@ -309,7 +313,7 @@ class TestBancoChileImporter:
             # Only categorize Internet transactions
             if metadata.get("channel") == "Internet":
                 if amount < 0:
-                    return "Expenses:Online"
+                    return {"category": "Expenses:Online"}
             return None
 
         importer = BancoChileImporter(
@@ -329,20 +333,22 @@ class TestBancoChileImporter:
         assert len(categorized) >= 0
         assert len(uncategorized) >= 0
 
-    def test_categorizer_tuple_return_simple(self):
-        """Test categorizer returning (subaccount, category) tuple."""
+    def test_categorizer_with_subaccount_and_category(self):
+        """Test categorizer with subaccount and category dict return."""
 
-        def tuple_categorizer(date, payee, narration, amount, metadata):
-            """Return tuple with subaccount and category."""
+        def subaccount_categorizer(date, payee, narration, amount, metadata):
+            """Return dict with subaccount and category."""
             if amount < 0:  # Debit
-                # Return (subaccount_suffix, category_account)
-                return ("Car", "Expenses:Car:Gas")
+                return {
+                    "subaccount": "Car",
+                    "category": "Expenses:Car:Gas"
+                }
             return None
 
         importer = BancoChileImporter(
             account_number="00-123-45678-90",
             account_name="Assets:BancoChile:Checking",
-            categorizer=tuple_categorizer,
+            categorizer=subaccount_categorizer,
         )
 
         entries = importer.extract(FIXTURE_PATH)
@@ -365,26 +371,25 @@ class TestBancoChileImporter:
                 1
             ].units.number == Decimal("0")
 
-    def test_categorizer_tuple_return_with_splits(self):
-        """Test categorizer returning (subaccount, split_postings) tuple."""
+    def test_categorizer_with_subaccount_and_split_postings(self):
+        """Test categorizer with subaccount and split postings dict return."""
 
-        def tuple_split_categorizer(date, payee, narration, amount, metadata):
-            """Return tuple with subaccount and split postings."""
+        def subaccount_split_categorizer(date, payee, narration, amount, metadata):
+            """Return dict with subaccount and split postings."""
             if amount < 0:  # Debit
-                # Return (subaccount_suffix, split_postings)
-                return (
-                    "Household",
-                    [
-                        ("Expenses:Groceries", -amount * Decimal("0.6")),
-                        ("Expenses:Household", -amount * Decimal("0.4")),
-                    ],
-                )
+                return {
+                    "subaccount": "Household",
+                    "postings": [
+                        {"category": "Expenses:Groceries", "amount": -amount * Decimal("0.6")},
+                        {"category": "Expenses:Household", "amount": -amount * Decimal("0.4")},
+                    ]
+                }
             return None
 
         importer = BancoChileImporter(
             account_number="00-123-45678-90",
             account_name="Assets:BancoChile:Checking",
-            categorizer=tuple_split_categorizer,
+            categorizer=subaccount_split_categorizer,
         )
 
         entries = importer.extract(FIXTURE_PATH)
@@ -407,16 +412,15 @@ class TestBancoChileImporter:
             total = sum(posting.units.number for posting in txn.postings)
             assert total == Decimal("0")
 
-    def test_categorizer_tuple_return_subaccount_only(self):
-        """Test categorizer returning (subaccount, None) - no category."""
+    def test_categorizer_subaccount_only(self):
+        """Test categorizer with subaccount only (no category) dict return."""
 
         def subaccount_only_categorizer(date, payee, narration, amount, metadata):
-            """Return tuple with subaccount and None (no category)."""
+            """Return dict with subaccount only (no category)."""
             if amount < -100000:  # Large debits
-                # Return (subaccount_suffix, None) - subaccount only, no category
-                return ("Savings", None)
+                return {"subaccount": "Savings"}
             if amount > 0:  # Credits
-                return ("Emergency", None)
+                return {"subaccount": "Emergency"}
             return None
 
         importer = BancoChileImporter(
@@ -451,3 +455,37 @@ class TestBancoChileImporter:
             assert len(txn.postings) == 1
             # Should use Emergency subaccount
             assert txn.postings[0].account == "Assets:BancoChile:Checking:Emergency"
+
+    def test_categorizer_with_payee_and_narration_overrides(self):
+        """Test categorizer with payee and narration overrides."""
+
+        def override_categorizer(date, payee, narration, amount, metadata):
+            """Return dict with payee and narration overrides."""
+            if "JUMBO" in payee.upper():
+                return {
+                    "payee": "Supermercado Jumbo",
+                    "narration": "Grocery shopping",
+                    "category": "Expenses:Groceries"
+                }
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=override_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Find transactions that should have overrides
+        overridden = [txn for txn in txn_entries if "Jumbo" in txn.payee]
+
+        for txn in overridden:
+            # Check payee override
+            assert txn.payee == "Supermercado Jumbo"
+            # Check narration override
+            assert txn.narration == "Grocery shopping"
+            # Should have 2 postings (account + category)
+            assert len(txn.postings) == 2
+            assert txn.postings[1].account == "Expenses:Groceries"

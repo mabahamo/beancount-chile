@@ -152,7 +152,7 @@ Both importers support an optional `categorizer` parameter that allows you to au
 ```python
 def categorizer(date, payee, narration, amount, metadata):
     """
-    Categorize a transaction.
+    Categorize a transaction and optionally set subaccount.
 
     Args:
         date: Transaction date (datetime.date)
@@ -162,10 +162,11 @@ def categorizer(date, payee, narration, amount, metadata):
         metadata: Dict with transaction-specific metadata
 
     Returns:
-        - None: No categorization
+        - None: No categorization, no subaccount
         - str: Account name for single posting
         - List[Tuple[str, Decimal]]: Multiple postings with (account, amount) pairs
-          for transaction splitting
+        - Tuple[str, str]: (subaccount_suffix, category_account) - NEW in v0.5.0
+        - Tuple[str, List[Tuple[str, Decimal]]]: (subaccount_suffix, split_postings) - NEW in v0.5.0
     """
     # Your categorization logic here
     return "Expenses:Category" or None
@@ -568,6 +569,52 @@ This creates virtual liability subaccounts:
   city: "SANTIAGO"
   Liabilities:CreditCard:BancoChile:Personal  12000 CLP
 ```
+
+#### Simplified: Categorizer Returns Both (NEW in v0.5.0)
+
+Instead of using two separate functions, the categorizer can now return a tuple with BOTH the subaccount and category in one function:
+
+```python
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Single function handles subaccount AND category!"""
+    if "SHELL" in payee.upper() or "COPEC" in payee.upper():
+        # Return (subaccount_suffix, category_account)
+        return ("Car", "Expenses:Car:Gas")
+
+    if "JUMBO" in payee.upper():
+        # Return (subaccount_suffix, split_postings)
+        return ("Household", [
+            ("Expenses:Groceries", Decimal("40000")),
+            ("Expenses:Household", Decimal("10000")),
+        ])
+
+    return None  # No subaccount, no category
+
+CONFIG = [
+    BancoChileImporter(
+        account_number="00-123-45678-90",
+        account_name="Assets:BancoChile:Checking",
+        currency="CLP",
+        categorizer=my_categorizer,  # Just one function!
+    ),
+]
+```
+
+This creates transactions like:
+```beancount
+2026-01-05 * "Shell" "Shell Costanera"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Car  -45000 CLP
+  Expenses:Car:Gas                 45000 CLP
+
+2026-01-08 * "Jumbo" "Supermercado Jumbo"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Household  -50000 CLP
+  Expenses:Groceries                     40000 CLP
+  Expenses:Household                     10000 CLP
+```
+
+**Note**: You can still use `account_modifier` separately for advanced cases where you need different logic for subaccounts vs categories. The `account_modifier` will override any subaccount returned by the categorizer.
 
 #### Use Cases
 

@@ -22,7 +22,16 @@ from beancount_chile.helpers import clean_narration, normalize_payee
 # - None: no categorization
 # - str: single category account
 # - List[Tuple[str, Decimal]]: multiple postings with (account, amount) pairs
-CategorizerReturn = Optional[Union[str, List[Tuple[str, Decimal]]]]
+# - Tuple[str, str]: (subaccount_suffix, category_account) - NEW!
+# - Tuple[str, List[Tuple[str, Decimal]]]: (subaccount_suffix, split_postings) - NEW!
+CategorizerReturn = Optional[
+    Union[
+        str,
+        List[Tuple[str, Decimal]],
+        Tuple[str, str],
+        Tuple[str, List[Tuple[str, Decimal]]],
+    ]
+]
 
 # Type for the categorizer callable
 CategorizerFunc = Callable[[date_type, str, str, Decimal, dict], CategorizerReturn]
@@ -272,8 +281,9 @@ class BancoChileImporter(Importer):
 
         # Call categorizer if provided
         category_result = None
+        categorizer_subaccount = None
         if self.categorizer:
-            category_result = self.categorizer(
+            raw_result = self.categorizer(
                 transaction.date.date(),
                 payee,
                 narration,
@@ -281,10 +291,21 @@ class BancoChileImporter(Importer):
                 categorizer_metadata,
             )
 
+            # Check if categorizer returned a tuple with (subaccount, category/splits)
+            if isinstance(raw_result, tuple) and len(raw_result) == 2:
+                categorizer_subaccount, category_result = raw_result
+            else:
+                category_result = raw_result
+
         # Call account_modifier if provided to determine the account name
+        # account_modifier can override the subaccount from categorizer
         account_name = self.account_name
+        subaccount_suffix = (
+            categorizer_subaccount  # Start with categorizer's subaccount
+        )
+
         if self.account_modifier:
-            subaccount_suffix = self.account_modifier(
+            modifier_result = self.account_modifier(
                 transaction.date.date(),
                 payee,
                 narration,
@@ -292,8 +313,13 @@ class BancoChileImporter(Importer):
                 categorizer_metadata,
                 category_result,
             )
-            if subaccount_suffix:
-                account_name = f"{self.account_name}:{subaccount_suffix}"
+            if modifier_result:
+                subaccount_suffix = (
+                    modifier_result  # Override with account_modifier result
+                )
+
+        if subaccount_suffix:
+            account_name = f"{self.account_name}:{subaccount_suffix}"
 
         # Prepare postings list with the (possibly modified) account name
         postings = [

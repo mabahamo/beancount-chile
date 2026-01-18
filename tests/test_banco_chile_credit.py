@@ -504,7 +504,9 @@ class TestBancoChileCreditImporter:
     def test_account_modifier_alone(self):
         """Test account_modifier without categorizer."""
 
-        def simple_account_modifier(date, payee, narration, amount, metadata, category_result):
+        def simple_account_modifier(
+            date, payee, narration, amount, metadata, category_result
+        ):
             """Simple account modifier based on statement type."""
             # Use Personal subaccount for billed transactions
             if metadata.get("statement_type") == "facturado":
@@ -526,7 +528,9 @@ class TestBancoChileCreditImporter:
             e for e in entries_facturado if e.__class__.__name__ == "Transaction"
         ]
         for txn in txn_facturado:
-            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Personal"
+            assert (
+                txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Personal"
+            )
             # Should have only 1 posting (no categorization)
             assert len(txn.postings) == 1
 
@@ -536,7 +540,9 @@ class TestBancoChileCreditImporter:
             e for e in entries_no_facturado if e.__class__.__name__ == "Transaction"
         ]
         for txn in txn_no_facturado:
-            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Business"
+            assert (
+                txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Business"
+            )
             # Should have only 1 posting (no categorization)
             assert len(txn.postings) == 1
 
@@ -547,7 +553,9 @@ class TestBancoChileCreditImporter:
             """Categorize all transactions."""
             return "Expenses:General"
 
-        def my_account_modifier(date, payee, narration, amount, metadata, category_result):
+        def my_account_modifier(
+            date, payee, narration, amount, metadata, category_result
+        ):
             """Use Card1 subaccount for all transactions."""
             return "Card1"
 
@@ -569,7 +577,9 @@ class TestBancoChileCreditImporter:
             # Second posting should be the categorized expense
             assert txn.postings[1].account == "Expenses:General"
             # Amounts should balance
-            assert txn.postings[0].units.number + txn.postings[1].units.number == Decimal("0")
+            assert txn.postings[0].units.number + txn.postings[
+                1
+            ].units.number == Decimal("0")
 
     def test_account_modifier_using_category_result(self):
         """Test account_modifier using category_result to make decisions."""
@@ -580,7 +590,9 @@ class TestBancoChileCreditImporter:
                 return "Expenses:Streaming"
             return "Expenses:General"
 
-        def my_account_modifier(date, payee, narration, amount, metadata, category_result):
+        def my_account_modifier(
+            date, payee, narration, amount, metadata, category_result
+        ):
             """Use subaccount based on category."""
             # If categorized as Streaming, use Entertainment subaccount
             if category_result and isinstance(category_result, str):
@@ -600,18 +612,24 @@ class TestBancoChileCreditImporter:
 
         # Find transactions categorized as Streaming
         streaming_txns = [
-            txn for txn in txn_entries
-            if len(txn.postings) == 2 and txn.postings[1].account == "Expenses:Streaming"
+            txn
+            for txn in txn_entries
+            if len(txn.postings) == 2
+            and txn.postings[1].account == "Expenses:Streaming"
         ]
 
         # These should use the Entertainment subaccount
         for txn in streaming_txns:
-            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Entertainment"
+            assert (
+                txn.postings[0].account
+                == "Liabilities:CreditCard:BancoChile:Entertainment"
+            )
             assert txn.postings[1].account == "Expenses:Streaming"
 
         # Find other categorized transactions
         other_txns = [
-            txn for txn in txn_entries
+            txn
+            for txn in txn_entries
             if len(txn.postings) == 2 and txn.postings[1].account == "Expenses:General"
         ]
 
@@ -619,3 +637,72 @@ class TestBancoChileCreditImporter:
         for txn in other_txns:
             assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
             assert txn.postings[1].account == "Expenses:General"
+
+    def test_categorizer_tuple_return_simple(self):
+        """Test categorizer returning (subaccount, category) tuple."""
+
+        def tuple_categorizer(date, payee, narration, amount, metadata):
+            """Return tuple with subaccount and category."""
+            # Return (subaccount_suffix, category_account)
+            return ("Personal", "Expenses:Shopping")
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=tuple_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        for txn in txn_entries:
+            # Should have 2 postings (liability subaccount + category)
+            assert len(txn.postings) == 2
+            # First posting should use Personal subaccount
+            assert (
+                txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Personal"
+            )
+            # Second posting should be the category
+            assert txn.postings[1].account == "Expenses:Shopping"
+            # Amounts should balance
+            assert txn.postings[0].units.number + txn.postings[
+                1
+            ].units.number == Decimal("0")
+
+    def test_categorizer_tuple_return_with_splits(self):
+        """Test categorizer returning (subaccount, split_postings) tuple."""
+
+        def tuple_split_categorizer(date, payee, narration, amount, metadata):
+            """Return tuple with subaccount and split postings."""
+            # Return (subaccount_suffix, split_postings)
+            # Credit card amounts are positive, so split amounts should be negative
+            return (
+                "Business",
+                [
+                    ("Expenses:Office", -amount * Decimal("0.7")),
+                    ("Expenses:Software", -amount * Decimal("0.3")),
+                ],
+            )
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=tuple_split_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        for txn in txn_entries:
+            # Should have 3 postings (liability subaccount + 2 split categories)
+            assert len(txn.postings) == 3
+            # First posting should use Business subaccount
+            assert (
+                txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Business"
+            )
+            # Other postings should be split categories
+            assert txn.postings[1].account == "Expenses:Office"
+            assert txn.postings[2].account == "Expenses:Software"
+            # Amounts should balance
+            total = sum(posting.units.number for posting in txn.postings)
+            assert total == Decimal("0")

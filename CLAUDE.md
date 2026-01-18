@@ -444,6 +444,148 @@ ruff check .
 - **Beancount**: 3.x only (no support for 2.x)
 - **OS**: macOS, Linux, Windows
 
+## Advanced Features
+
+### Categorizer Tuple Returns (v0.5.0)
+
+Starting in v0.5.0, categorizers can return tuples to specify both the subaccount suffix and the category in a single function. This provides a unified way to handle virtual subaccounts for envelope budgeting or tracking earmarked funds.
+
+**Type Alias:**
+```python
+CategorizerReturn = Optional[
+    Union[
+        str,                                      # Single category (backward compatible)
+        List[Tuple[str, Decimal]],                # Split postings (backward compatible)
+        Tuple[str, str],                          # (subaccount_suffix, category_account) - NEW!
+        Tuple[str, List[Tuple[str, Decimal]]],    # (subaccount_suffix, split_postings) - NEW!
+        Tuple[str, None],                         # (subaccount_suffix, None) - Subaccount only - NEW!
+    ]
+]
+```
+
+**Return Types:**
+
+1. **Simple Tuple**: `Tuple[str, str]`
+   - First element: Subaccount suffix (e.g., "Car", "Household")
+   - Second element: Category account (e.g., "Expenses:Car:Gas")
+   ```python
+   def categorizer(date, payee, narration, amount, metadata):
+       if "SHELL" in payee.upper():
+           return ("Car", "Expenses:Car:Gas")  # Tuple!
+       return None
+   ```
+   Result: `Assets:BancoChile:Checking:Car` → `Expenses:Car:Gas`
+
+2. **Tuple with Split Postings**: `Tuple[str, List[Tuple[str, Decimal]]]`
+   - First element: Subaccount suffix
+   - Second element: List of (account, amount) pairs for split postings
+   ```python
+   def categorizer(date, payee, narration, amount, metadata):
+       if "JUMBO" in payee.upper():
+           return ("Household", [
+               ("Expenses:Groceries", -amount * Decimal("0.6")),
+               ("Expenses:Household", -amount * Decimal("0.4")),
+           ])
+       return None
+   ```
+   Result: `Assets:BancoChile:Checking:Household` → split across multiple expense accounts
+
+3. **Subaccount Only**: `Tuple[str, None]`
+   - First element: Subaccount suffix
+   - Second element: None (no automatic categorization)
+   ```python
+   def categorizer(date, payee, narration, amount, metadata):
+       # Large deposits to emergency fund, but don't categorize
+       if amount > 500000:
+           return ("Emergency", None)
+       return None
+   ```
+   Result: `Assets:BancoChile:Checking:Emergency` → single posting, no category added
+
+**Implementation Details:**
+
+The importer detects tuple returns with runtime type checking:
+```python
+# In _create_transaction_entry:
+category_result = None
+categorizer_subaccount = None
+
+if self.categorizer:
+    raw_result = self.categorizer(...)
+
+    # Check if categorizer returned a tuple with (subaccount, category/splits/None)
+    if isinstance(raw_result, tuple) and len(raw_result) == 2:
+        categorizer_subaccount, category_result = raw_result
+    else:
+        category_result = raw_result
+
+# Apply subaccount suffix if provided
+if categorizer_subaccount:
+    account_name = f"{self.account_name}:{categorizer_subaccount}"
+else:
+    account_name = self.account_name
+```
+
+**Backward Compatibility:**
+
+All existing categorizers continue to work unchanged:
+- Returning `None` → No categorization
+- Returning `str` → Single category account
+- Returning `List[Tuple[str, Decimal]]` → Split postings
+
+**Use Cases:**
+
+| Scenario | Return Type | Example |
+|----------|-------------|---------|
+| Simple expense categorization | `str` | `"Expenses:Groceries"` |
+| Split postings across categories | `List[Tuple[str, Decimal]]` | `[("Expenses:A", 100), ("Expenses:B", 50)]` |
+| Subaccount + category | `Tuple[str, str]` | `("Car", "Expenses:Car:Gas")` |
+| Subaccount + split postings | `Tuple[str, List[...]]` | `("Household", [(account, amount), ...])` |
+| Subaccount only (no category) | `Tuple[str, None]` | `("Emergency", None)` |
+
+**Example: Complete Categorizer with All Return Types**
+
+```python
+from decimal import Decimal
+
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Complete example showing all return types."""
+    # Subaccount + category
+    if "SHELL" in payee.upper():
+        return ("Car", "Expenses:Car:Gas")
+
+    # Subaccount + split postings
+    if "JUMBO" in payee.upper():
+        return ("Household", [
+            ("Expenses:Groceries", Decimal("40000")),
+            ("Expenses:Household", Decimal("10000")),
+        ])
+
+    # Subaccount only (no category)
+    if amount > 500000:
+        return ("Emergency", None)
+
+    # Just category (no subaccount) - backward compatible
+    if "NETFLIX" in payee.upper():
+        return "Expenses:Streaming"
+
+    # Split without subaccount - backward compatible
+    if "PHARMACY" in payee.upper():
+        return [
+            ("Expenses:Health:Medicine", Decimal("15000")),
+            ("Expenses:Health:Personal", -amount - Decimal("15000")),
+        ]
+
+    # No categorization
+    return None
+
+importer = BancoChileImporter(
+    account_number="...",
+    account_name="Assets:BancoChile:Checking",
+    categorizer=my_categorizer,
+)
+```
+
 ## Future Improvements
 
 - [x] Add PDF parsing support for banks that only provide PDF statements (Banco de Chile done)

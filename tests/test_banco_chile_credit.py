@@ -500,3 +500,118 @@ class TestBancoChileCreditImporter:
             # Verify amounts balance
             total = sum(posting.units.number for posting in txn.postings)
             assert total == Decimal("0")
+
+    def test_categorizer_tuple_return_simple(self):
+        """Test categorizer returning (subaccount, category) tuple."""
+
+        def tuple_categorizer(date, payee, narration, amount, metadata):
+            """Return tuple with subaccount and category."""
+            # Return (subaccount_suffix, category_account)
+            return ("Personal", "Expenses:Shopping")
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=tuple_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        for txn in txn_entries:
+            # Should have 2 postings (liability subaccount + category)
+            assert len(txn.postings) == 2
+            # First posting should use Personal subaccount
+            assert (
+                txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Personal"
+            )
+            # Second posting should be the category
+            assert txn.postings[1].account == "Expenses:Shopping"
+            # Amounts should balance
+            assert txn.postings[0].units.number + txn.postings[
+                1
+            ].units.number == Decimal("0")
+
+    def test_categorizer_tuple_return_with_splits(self):
+        """Test categorizer returning (subaccount, split_postings) tuple."""
+
+        def tuple_split_categorizer(date, payee, narration, amount, metadata):
+            """Return tuple with subaccount and split postings."""
+            # Return (subaccount_suffix, split_postings)
+            # Credit card amounts are positive, so split amounts should be negative
+            return (
+                "Business",
+                [
+                    ("Expenses:Office", -amount * Decimal("0.7")),
+                    ("Expenses:Software", -amount * Decimal("0.3")),
+                ],
+            )
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=tuple_split_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        for txn in txn_entries:
+            # Should have 3 postings (liability subaccount + 2 split categories)
+            assert len(txn.postings) == 3
+            # First posting should use Business subaccount
+            assert (
+                txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Business"
+            )
+            # Other postings should be split categories
+            assert txn.postings[1].account == "Expenses:Office"
+            assert txn.postings[2].account == "Expenses:Software"
+            # Amounts should balance
+            total = sum(posting.units.number for posting in txn.postings)
+            assert total == Decimal("0")
+
+    def test_categorizer_tuple_return_subaccount_only(self):
+        """Test categorizer returning (subaccount, None) - no category."""
+
+        def subaccount_only_categorizer(date, payee, narration, amount, metadata):
+            """Return tuple with subaccount and None (no category)."""
+            # Use Personal subaccount for billed, Business for unbilled
+            if metadata.get("statement_type") == "facturado":
+                return ("Personal", None)
+            if metadata.get("statement_type") == "no_facturado":
+                return ("Business", None)
+            return None
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=subaccount_only_categorizer,
+        )
+
+        # Test facturado
+        entries_facturado = importer.extract(FIXTURE_FACTURADO)
+        txn_facturado = [
+            e for e in entries_facturado if e.__class__.__name__ == "Transaction"
+        ]
+
+        for txn in txn_facturado:
+            # Should have 1 posting (subaccount only, no category)
+            assert len(txn.postings) == 1
+            # Should use Personal subaccount
+            assert (
+                txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Personal"
+            )
+
+        # Test no facturado
+        entries_no_facturado = importer.extract(FIXTURE_NO_FACTURADO)
+        txn_no_facturado = [
+            e for e in entries_no_facturado if e.__class__.__name__ == "Transaction"
+        ]
+
+        for txn in txn_no_facturado:
+            # Should have 1 posting (subaccount only, no category)
+            assert len(txn.postings) == 1
+            # Should use Business subaccount
+            assert (
+                txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Business"
+            )

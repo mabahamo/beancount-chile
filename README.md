@@ -152,7 +152,7 @@ Both importers support an optional `categorizer` parameter that allows you to au
 ```python
 def categorizer(date, payee, narration, amount, metadata):
     """
-    Categorize a transaction.
+    Categorize a transaction and optionally set subaccount.
 
     Args:
         date: Transaction date (datetime.date)
@@ -162,10 +162,12 @@ def categorizer(date, payee, narration, amount, metadata):
         metadata: Dict with transaction-specific metadata
 
     Returns:
-        - None: No categorization
+        - None: No categorization, no subaccount
         - str: Account name for single posting
         - List[Tuple[str, Decimal]]: Multiple postings with (account, amount) pairs
-          for transaction splitting
+        - Tuple[str, str]: (subaccount_suffix, category_account) - NEW in v0.5.0
+        - Tuple[str, List[Tuple[str, Decimal]]]: (subaccount_suffix, split_postings) - NEW in v0.5.0
+        - Tuple[str, None]: (subaccount_suffix, None) - Subaccount without category - NEW in v0.5.0
     """
     # Your categorization logic here
     return "Expenses:Category" or None
@@ -417,6 +419,122 @@ When a categorizer returns a list of (account, amount) tuples, transactions can 
 4. **Test Thoroughly**: Review categorized transactions to ensure accuracy
 5. **Use Metadata**: Leverage the metadata dict for more precise categorization rules
 6. **Combine Strategies**: Mix pattern matching, amount-based, and metadata-based logic as needed
+
+### Virtual Subaccounts with Tuple Returns (NEW in v0.5.0)
+
+The categorizer can return a tuple to specify BOTH the subaccount and category in a single function. This is perfect for envelope budgeting or tracking earmarked funds.
+
+#### Categorizer Tuple Return Types
+
+The categorizer can return different types to handle various scenarios:
+
+**1. Tuple[str, str] - Subaccount + Category**
+```python
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Return (subaccount_suffix, category_account)"""
+    if "SHELL" in payee.upper() or "COPEC" in payee.upper():
+        return ("Car", "Expenses:Car:Gas")
+    return None
+
+# Creates: Assets:BancoChile:Checking:Car -> Expenses:Car:Gas
+```
+
+**2. Tuple[str, List[...]] - Subaccount + Split Postings**
+```python
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Return (subaccount_suffix, split_postings)"""
+    if "JUMBO" in payee.upper():
+        return ("Household", [
+            ("Expenses:Groceries", Decimal("40000")),
+            ("Expenses:Household", Decimal("10000")),
+        ])
+    return None
+
+# Creates: Assets:BancoChile:Checking:Household -> multiple expense accounts
+```
+
+**3. Tuple[str, None] - Subaccount Only (No Category)**
+```python
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Return (subaccount_suffix, None) for subaccount without auto-categorization"""
+    # Large deposits go to emergency fund, but don't categorize
+    if amount > 500000:
+        return ("Emergency", None)
+    return None
+
+# Creates: Assets:BancoChile:Checking:Emergency (single posting, no category)
+```
+
+#### Example: Combining All Return Types
+
+```python
+from decimal import Decimal
+
+def my_categorizer(date, payee, narration, amount, metadata):
+    """Single function handles subaccount AND category!"""
+    # Subaccount + category
+    if "SHELL" in payee.upper() or "COPEC" in payee.upper():
+        return ("Car", "Expenses:Car:Gas")
+
+    # Subaccount + split postings
+    if "JUMBO" in payee.upper():
+        return ("Household", [
+            ("Expenses:Groceries", Decimal("40000")),
+            ("Expenses:Household", Decimal("10000")),
+        ])
+
+    # Subaccount only (no category)
+    if amount > 500000:
+        return ("Emergency", None)
+
+    # No subaccount, just category (backward compatible)
+    if "NETFLIX" in payee.upper():
+        return "Expenses:Streaming"
+
+    return None  # No subaccount, no category
+
+CONFIG = [
+    BancoChileImporter(
+        account_number="00-123-45678-90",
+        account_name="Assets:BancoChile:Checking",
+        currency="CLP",
+        categorizer=my_categorizer,  # Just one function!
+    ),
+]
+```
+
+#### Example Output
+
+**Subaccount + Category:**
+```beancount
+2026-01-05 * "Shell" "Shell Costanera"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Car  -45000 CLP
+  Expenses:Car:Gas                 45000 CLP
+```
+
+**Subaccount + Split Postings:**
+```beancount
+2026-01-08 * "Jumbo" "Supermercado Jumbo"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Household  -50000 CLP
+  Expenses:Groceries                     40000 CLP
+  Expenses:Household                     10000 CLP
+```
+
+**Subaccount Only:**
+```beancount
+2026-01-10 * "Salary Deposit" "Monthly Salary"
+  channel: "Internet"
+  Assets:BancoChile:Checking:Emergency  600000 CLP
+```
+
+#### Use Cases
+
+- **Envelope Budgeting**: Track money earmarked for different purposes (Car, Vacation, Emergency)
+- **Savings Goals**: Separate virtual accounts for different savings objectives
+- **Business/Personal Separation**: Split credit card expenses by purpose
+- **Budget Categories**: Map transactions to budget envelopes automatically
 
 ## Development
 

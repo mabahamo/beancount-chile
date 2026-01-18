@@ -328,3 +328,126 @@ class TestBancoChileImporter:
         # Both should exist (assuming fixture has both types)
         assert len(categorized) >= 0
         assert len(uncategorized) >= 0
+
+    def test_categorizer_tuple_return_simple(self):
+        """Test categorizer returning (subaccount, category) tuple."""
+
+        def tuple_categorizer(date, payee, narration, amount, metadata):
+            """Return tuple with subaccount and category."""
+            if amount < 0:  # Debit
+                # Return (subaccount_suffix, category_account)
+                return ("Car", "Expenses:Car:Gas")
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=tuple_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Find debit transactions
+        debit_txns = [
+            txn for txn in txn_entries if txn.postings[0].units.number < Decimal("0")
+        ]
+
+        for txn in debit_txns:
+            # Should have 2 postings (asset subaccount + category)
+            assert len(txn.postings) == 2
+            # First posting should use Car subaccount
+            assert txn.postings[0].account == "Assets:BancoChile:Checking:Car"
+            # Second posting should be the category
+            assert txn.postings[1].account == "Expenses:Car:Gas"
+            # Amounts should balance
+            assert txn.postings[0].units.number + txn.postings[
+                1
+            ].units.number == Decimal("0")
+
+    def test_categorizer_tuple_return_with_splits(self):
+        """Test categorizer returning (subaccount, split_postings) tuple."""
+
+        def tuple_split_categorizer(date, payee, narration, amount, metadata):
+            """Return tuple with subaccount and split postings."""
+            if amount < 0:  # Debit
+                # Return (subaccount_suffix, split_postings)
+                return (
+                    "Household",
+                    [
+                        ("Expenses:Groceries", -amount * Decimal("0.6")),
+                        ("Expenses:Household", -amount * Decimal("0.4")),
+                    ],
+                )
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=tuple_split_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Find debit transactions
+        debit_txns = [
+            txn for txn in txn_entries if txn.postings[0].units.number < Decimal("0")
+        ]
+
+        for txn in debit_txns:
+            # Should have 3 postings (asset subaccount + 2 split categories)
+            assert len(txn.postings) == 3
+            # First posting should use Household subaccount
+            assert txn.postings[0].account == "Assets:BancoChile:Checking:Household"
+            # Other postings should be split categories
+            assert txn.postings[1].account == "Expenses:Groceries"
+            assert txn.postings[2].account == "Expenses:Household"
+            # Amounts should balance
+            total = sum(posting.units.number for posting in txn.postings)
+            assert total == Decimal("0")
+
+    def test_categorizer_tuple_return_subaccount_only(self):
+        """Test categorizer returning (subaccount, None) - no category."""
+
+        def subaccount_only_categorizer(date, payee, narration, amount, metadata):
+            """Return tuple with subaccount and None (no category)."""
+            if amount < -100000:  # Large debits
+                # Return (subaccount_suffix, None) - subaccount only, no category
+                return ("Savings", None)
+            if amount > 0:  # Credits
+                return ("Emergency", None)
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=subaccount_only_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Find large debits
+        large_debits = [
+            txn
+            for txn in txn_entries
+            if txn.postings[0].units.number < Decimal("-100000")
+        ]
+
+        for txn in large_debits:
+            # Should have 1 posting (subaccount only, no category)
+            assert len(txn.postings) == 1
+            # Should use Savings subaccount
+            assert txn.postings[0].account == "Assets:BancoChile:Checking:Savings"
+
+        # Find credits
+        credits = [
+            txn for txn in txn_entries if txn.postings[0].units.number > Decimal("0")
+        ]
+
+        for txn in credits:
+            # Should have 1 posting (subaccount only, no category)
+            assert len(txn.postings) == 1
+            # Should use Emergency subaccount
+            assert txn.postings[0].account == "Assets:BancoChile:Checking:Emergency"

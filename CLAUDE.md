@@ -461,6 +461,7 @@ CategorizerReturn = Optional[Dict[str, Any]]
 - `narration`: str - Override transaction narration
 - `subaccount`: str - Subaccount suffix for main account
 - `postings`: List[Dict] - For splits, each dict with 'category' and 'amount' keys
+- `receipts`: List[str] - List of paths to receipt files (creates linked Document entries)
 
 **Return Examples:**
 
@@ -523,6 +524,33 @@ CategorizerReturn = Optional[Dict[str, Any]]
    ```
    Result: `Assets:BancoChile:Checking:Emergency` → single posting, no category added
 
+6. **Attach Receipts**
+   ```python
+   def categorizer(date, payee, narration, amount, metadata):
+       if "AMAZON" in payee.upper():
+           return {
+               "category": "Expenses:Shopping",
+               "receipts": ["/path/to/amazon-invoice.pdf"]
+           }
+       return None
+   ```
+   Result: Transaction linked to Document entry via `^rcpt-xxxxxxxx` link
+
+7. **Multiple Receipts**
+   ```python
+   def categorizer(date, payee, narration, amount, metadata):
+       if "OFFICE SUPPLIES" in narration.upper():
+           return {
+               "category": "Expenses:Office",
+               "receipts": [
+                   "/receipts/office-depot-receipt.pdf",
+                   "/receipts/office-depot-warranty.pdf",
+               ]
+           }
+       return None
+   ```
+   Result: Transaction linked to multiple Document entries, all sharing the same link
+
 **Use Cases:**
 
 | Scenario | Dict Fields | Example |
@@ -533,6 +561,9 @@ CategorizerReturn = Optional[Dict[str, Any]]
 | Subaccount + split postings | `subaccount`, `postings` | `{"subaccount": "Household", "postings": [...]}` |
 | Subaccount only (no category) | `subaccount` | `{"subaccount": "Emergency"}` |
 | Override transaction details | `payee`, `narration` | `{"payee": "Netflix", "narration": "Subscription"}` |
+| Attach single receipt | `receipts` | `{"receipts": ["/path/to/receipt.pdf"]}` |
+| Attach multiple receipts | `receipts` | `{"receipts": ["/path/a.pdf", "/path/b.pdf"]}` |
+| Category + receipt | `category`, `receipts` | `{"category": "Expenses:Shopping", "receipts": [...]}` |
 
 **Example: Complete Categorizer with All Options**
 
@@ -576,6 +607,16 @@ def my_categorizer(date, payee, narration, amount, metadata):
             "postings": [
                 {"category": "Expenses:Health:Medicine", "amount": Decimal("15000")},
                 {"category": "Expenses:Health:Personal", "amount": -amount - Decimal("15000")},
+            ]
+        }
+
+    # Attach receipts to a transaction
+    if "AMAZON" in payee.upper():
+        return {
+            "category": "Expenses:Shopping",
+            "receipts": [
+                f"/receipts/{date.isoformat()}-amazon-invoice.pdf",
+                f"/receipts/{date.isoformat()}-amazon-shipping.pdf",
             ]
         }
 

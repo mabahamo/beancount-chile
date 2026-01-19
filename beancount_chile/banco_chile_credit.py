@@ -1,10 +1,11 @@
 """Beancount importer for Banco de Chile credit card statements."""
 
+import hashlib
 from datetime import date as date_type
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from beancount.core import amount, data, flags
 from beancount.core.number import D
@@ -24,6 +25,7 @@ from beancount_chile.helpers import clean_narration, normalize_payee
 # - narration: str - override transaction narration
 # - subaccount: str - subaccount suffix for main account
 # - postings: List[Dict] - for splits, each with 'category' and 'amount'
+# - receipts: List[str] - list of paths to receipt files
 CategorizerReturn = Optional[Dict[str, Any]]
 
 # Type for the categorizer callable
@@ -57,6 +59,7 @@ class BancoChileCreditImporter(Importer):
                 - narration: str - override transaction narration
                 - subaccount: str - subaccount suffix
                 - postings: List[Dict] - for splits, each with 'category' and 'amount'
+                - receipts: List[str] - list of paths to receipt files
                 Returns None for no categorization
         """
         self.card_last_four = card_last_four
@@ -172,9 +175,13 @@ class BancoChileCreditImporter(Importer):
 
         # Process transactions
         for transaction in transactions:
-            entry = self._create_transaction_entry(transaction, metadata, filepath)
-            if entry:
-                entries.append(entry)
+            txn, documents = self._create_transaction_entry(
+                transaction, metadata, filepath
+            )
+            if txn:
+                entries.append(txn)
+                # Add any associated document entries (receipts)
+                entries.extend(documents)
 
         return entries
 
@@ -222,7 +229,7 @@ class BancoChileCreditImporter(Importer):
 
     def _create_transaction_entry(
         self, transaction: BancoChileCreditTransaction, metadata, filepath: Path
-    ) -> Optional[data.Transaction]:
+    ) -> Tuple[Optional[data.Transaction], List[data.Document]]:
         """
         Create a Beancount transaction from a credit card transaction.
 
@@ -232,7 +239,7 @@ class BancoChileCreditImporter(Importer):
             filepath: Source file path
 
         Returns:
-            Beancount transaction entry
+            Tuple of (transaction entry, list of Document entries for receipts)
         """
         # Credit card charges are positive (increase liability)
         txn_amount = D(str(transaction.amount))
@@ -289,6 +296,7 @@ class BancoChileCreditImporter(Importer):
         subaccount_suffix = None
         category_account = None
         split_postings = None
+        receipt_paths: List[str] = []
 
         if categorizer_result:
             # Override payee if provided
@@ -308,6 +316,10 @@ class BancoChileCreditImporter(Importer):
                 split_postings = categorizer_result["postings"]
             elif "category" in categorizer_result:
                 category_account = categorizer_result["category"]
+
+            # Get receipt paths if provided
+            if "receipts" in categorizer_result:
+                receipt_paths = categorizer_result["receipts"] or []
 
         # Determine the account name with optional subaccount
         account_name = self.account_name
@@ -353,6 +365,18 @@ class BancoChileCreditImporter(Importer):
                 )
             )
 
+        # Generate a deterministic link if there are receipts
+        txn_links: frozenset[str] = frozenset()
+        if receipt_paths:
+            # Create a deterministic link ID based on date, payee, and receipt paths
+            # This ensures the same receipts always generate the same link
+            date_str = transaction.date.date().isoformat()
+            paths_str = ",".join(sorted(receipt_paths))
+            hash_input = f"{date_str}:{payee}:{paths_str}"
+            link_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:8]
+            link_id = f"rcpt-{link_hash}"
+            txn_links = frozenset([link_id])
+
         # Create transaction
         txn = data.Transaction(
             meta=meta,
@@ -360,9 +384,22 @@ class BancoChileCreditImporter(Importer):
             flag=flag,
             payee=payee,
             narration=narration,
-            tags=set(),
-            links=set(),
+            tags=frozenset(),
+            links=txn_links,
             postings=postings,
         )
 
-        return txn
+        # Create Document entries for receipts
+        documents: List[data.Document] = []
+        for receipt_path in receipt_paths:
+            doc = data.Document(
+                meta=data.new_metadata(str(filepath), 0),
+                date=transaction.date.date(),
+                account=account_name,
+                filename=receipt_path,
+                tags=None,
+                links=txn_links if txn_links else None,
+            )
+            documents.append(doc)
+
+        return txn, documents

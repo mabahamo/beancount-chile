@@ -462,6 +462,7 @@ CategorizerReturn = Optional[Dict[str, Any]]
 - `subaccount`: str - Subaccount suffix for main account
 - `postings`: List[Dict] - For splits, each dict with 'category' and 'amount' keys
 - `receipts`: List[str] - List of paths to receipt files (creates linked Document entries)
+- `metadata`: Dict[str, Any] - Custom metadata to add to the transaction
 
 **Return Examples:**
 
@@ -551,6 +552,23 @@ CategorizerReturn = Optional[Dict[str, Any]]
    ```
    Result: Transaction linked to multiple Document entries, all sharing the same link
 
+8. **Custom Metadata**
+   ```python
+   def categorizer(date, payee, narration, amount, metadata):
+       if "AMAZON" in payee.upper():
+           return {
+               "category": "Expenses:Shopping:Online",
+               "metadata": {
+                   "merchant_category": "online",
+                   "order_id": "AMZ-123456",
+                   "tax_deductible": False,
+                   "reviewed": True,
+               }
+           }
+       return None
+   ```
+   Result: Transaction with custom metadata fields added for tracking, analysis, or compliance
+
 **Use Cases:**
 
 | Scenario | Dict Fields | Example |
@@ -564,6 +582,7 @@ CategorizerReturn = Optional[Dict[str, Any]]
 | Attach single receipt | `receipts` | `{"receipts": ["/path/to/receipt.pdf"]}` |
 | Attach multiple receipts | `receipts` | `{"receipts": ["/path/a.pdf", "/path/b.pdf"]}` |
 | Category + receipt | `category`, `receipts` | `{"category": "Expenses:Shopping", "receipts": [...]}` |
+| Add custom metadata | `metadata` | `{"metadata": {"tax_deductible": True, "reviewed": False}}` |
 
 **Example: Complete Categorizer with All Options**
 
@@ -618,6 +637,17 @@ def my_categorizer(date, payee, narration, amount, metadata):
                 f"/receipts/{date.isoformat()}-amazon-invoice.pdf",
                 f"/receipts/{date.isoformat()}-amazon-shipping.pdf",
             ]
+        }
+
+    # Add custom metadata for tracking
+    if "GROCERY" in narration.upper():
+        return {
+            "category": "Expenses:Groceries",
+            "metadata": {
+                "tax_deductible": False,
+                "reviewed": True,
+                "budget_category": "food",
+            }
         }
 
     # No categorization

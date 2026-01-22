@@ -629,3 +629,44 @@ class TestBancoChileCreditImporter:
             assert (
                 txn.postings[0].account == "Liabilities:CreditCard:BancoChile:Business"
             )
+
+    def test_categorizer_with_custom_metadata(self):
+        """Test categorizer with custom metadata dict return."""
+
+        def metadata_categorizer(date, payee, narration, amount, metadata):
+            """Return dict with custom metadata."""
+            return {
+                "category": "Expenses:Shopping:Online",
+                "metadata": {
+                    "merchant_category": "electronics",
+                    "purchase_id": "TXN-67890",
+                    "approved": True,
+                    "points_earned": 150,
+                },
+            }
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=metadata_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        for txn in txn_entries:
+            # Should have custom metadata
+            assert "merchant_category" in txn.meta
+            assert txn.meta["merchant_category"] == "electronics"
+            assert "purchase_id" in txn.meta
+            assert txn.meta["purchase_id"] == "TXN-67890"
+            assert "approved" in txn.meta
+            assert txn.meta["approved"] is True
+            assert "points_earned" in txn.meta
+            assert txn.meta["points_earned"] == 150
+            # Should also have default metadata (statement_type, installments)
+            assert "statement_type" in txn.meta
+            assert "installments" in txn.meta
+            # Should have 2 postings (credit card + category)
+            assert len(txn.postings) == 2
+            assert txn.postings[1].account == "Expenses:Shopping:Online"

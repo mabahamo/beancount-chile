@@ -507,3 +507,47 @@ class TestBancoChileImporter:
             # Should have 2 postings (account + category)
             assert len(txn.postings) == 2
             assert txn.postings[1].account == "Expenses:Groceries"
+
+    def test_categorizer_with_custom_metadata(self):
+        """Test categorizer with custom metadata dict return."""
+
+        def metadata_categorizer(date, payee, narration, amount, metadata):
+            """Return dict with custom metadata."""
+            if amount < 0:  # Debit
+                return {
+                    "category": "Expenses:Shopping",
+                    "metadata": {
+                        "purchase_type": "online",
+                        "vendor_id": "12345",
+                        "reviewed": True,
+                    },
+                }
+            return None
+
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+            categorizer=metadata_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_PATH)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        # Find debit transactions
+        debit_txns = [
+            txn for txn in txn_entries if txn.postings[0].units.number < Decimal("0")
+        ]
+
+        for txn in debit_txns:
+            # Should have custom metadata
+            assert "purchase_type" in txn.meta
+            assert txn.meta["purchase_type"] == "online"
+            assert "vendor_id" in txn.meta
+            assert txn.meta["vendor_id"] == "12345"
+            assert "reviewed" in txn.meta
+            assert txn.meta["reviewed"] is True
+            # Should also have default metadata (channel)
+            assert "channel" in txn.meta
+            # Should have 2 postings (account + category)
+            assert len(txn.postings) == 2
+            assert txn.postings[1].account == "Expenses:Shopping"

@@ -26,6 +26,7 @@ from beancount_chile.helpers import clean_narration, normalize_payee
 # - subaccount: str - subaccount suffix for main account
 # - postings: List[Dict] - for splits, each with 'category' and 'amount'
 # - receipts: List[str] - list of paths to receipt files
+# - metadata: Dict[str, Any] - custom metadata to add to the transaction
 CategorizerReturn = Optional[Dict[str, Any]]
 
 # Type for the categorizer callable
@@ -60,6 +61,7 @@ class BancoChileCreditImporter(Importer):
                 - subaccount: str - subaccount suffix
                 - postings: List[Dict] - for splits, each with 'category' and 'amount'
                 - receipts: List[str] - list of paths to receipt files
+                - metadata: Dict[str, Any] - custom metadata to add to the transaction
                 Returns None for no categorization
         """
         self.card_last_four = card_last_four
@@ -320,6 +322,12 @@ class BancoChileCreditImporter(Importer):
             # Get receipt paths if provided
             if "receipts" in categorizer_result:
                 receipt_paths = categorizer_result["receipts"] or []
+
+            # Merge custom metadata if provided
+            if "metadata" in categorizer_result:
+                custom_metadata = categorizer_result["metadata"] or {}
+                for key, value in custom_metadata.items():
+                    meta[key] = value
 
         # Determine the account name with optional subaccount
         account_name = self.account_name

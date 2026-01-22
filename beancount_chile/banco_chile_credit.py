@@ -397,8 +397,8 @@ class BancoChileCreditImporter(Importer):
                 date=transaction.date.date(),
                 account=account_name,
                 filename=receipt_path,
-                tags=None,
-                links=txn_links if txn_links else None,
+                tags=frozenset(),
+                links=txn_links if txn_links else frozenset(),
             )
             documents.append(doc)
 

@@ -76,19 +76,19 @@ class BancoChileCreditXLSExtractor:
         Returns:
             Engine name: 'xlrd' for old binary .xls, 'openpyxl' for modern .xlsx
         """
-        with open(filepath, 'rb') as f:
+        with open(filepath, "rb") as f:
             magic_bytes = f.read(4)
 
         # Check for old binary .xls format (OLE2/Compound File)
-        if magic_bytes[:4] == b'\xD0\xCF\x11\xE0':
-            return 'xlrd'
+        if magic_bytes[:4] == b"\xd0\xcf\x11\xe0":
+            return "xlrd"
 
         # Check for modern .xlsx format (ZIP file)
-        if magic_bytes[:2] == b'PK':
-            return 'openpyxl'
+        if magic_bytes[:2] == b"PK":
+            return "openpyxl"
 
         # Default to openpyxl for unknown formats
-        return 'openpyxl'
+        return "openpyxl"
 
     def extract(
         self, filepath: str

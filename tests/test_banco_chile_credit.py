@@ -19,6 +19,9 @@ FIXTURE_FACTURADO = (
 FIXTURE_NO_FACTURADO = (
     Path(__file__).parent / "fixtures" / "banco_chile_credit_no_facturado_sample.xls"
 )
+FIXTURE_FACTURADO_BINARY = (
+    Path(__file__).parent / "fixtures" / "banco_chile_credit_facturado_binary.xls"
+)
 
 
 class TestBancoChileCreditXLSExtractor:
@@ -137,6 +140,34 @@ class TestBancoChileCreditXLSExtractor:
 
         with pytest.raises(Exception):
             extractor.extract("nonexistent_file.xls")
+
+    def test_extract_xls_binary_format(self):
+        """Test extraction from old binary .xls file format."""
+        extractor = BancoChileCreditXLSExtractor()
+
+        # Verify the test fixture is in old binary format
+        with open(FIXTURE_FACTURADO_BINARY, 'rb') as f:
+            magic_bytes = f.read(4)
+            assert magic_bytes == b'\xD0\xCF\x11\xE0', "Test fixture must be in old binary .xls format"
+
+        # Extract metadata and transactions
+        metadata, transactions = extractor.extract(str(FIXTURE_FACTURADO_BINARY))
+
+        # Verify metadata extraction works
+        assert metadata.account_holder == "Juan Pérez González"
+        assert metadata.rut == "12.345.678-9"
+        assert metadata.statement_type == StatementType.FACTURADO
+        assert isinstance(metadata.statement_date, datetime)
+
+        # Verify transactions were extracted
+        assert len(transactions) > 0
+
+        # Verify transaction structure
+        first_txn = transactions[0]
+        assert isinstance(first_txn.date, datetime)
+        assert isinstance(first_txn.description, str)
+        assert isinstance(first_txn.amount, Decimal)
+        assert first_txn.amount > 0
 
 
 class TestBancoChileCreditImporter:

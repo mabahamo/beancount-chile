@@ -67,6 +67,29 @@ class BancoChileCreditXLSExtractor:
         """Initialize the extractor."""
         pass
 
+    def _detect_excel_engine(self, filepath: str) -> str:
+        """Detect the appropriate pandas engine based on file magic bytes.
+
+        Args:
+            filepath: Path to the Excel file
+
+        Returns:
+            Engine name: 'xlrd' for old binary .xls, 'openpyxl' for modern .xlsx
+        """
+        with open(filepath, 'rb') as f:
+            magic_bytes = f.read(4)
+
+        # Check for old binary .xls format (OLE2/Compound File)
+        if magic_bytes[:4] == b'\xD0\xCF\x11\xE0':
+            return 'xlrd'
+
+        # Check for modern .xlsx format (ZIP file)
+        if magic_bytes[:2] == b'PK':
+            return 'openpyxl'
+
+        # Default to openpyxl for unknown formats
+        return 'openpyxl'
+
     def extract(
         self, filepath: str
     ) -> tuple[BancoChileCreditMetadata, list[BancoChileCreditTransaction]]:
@@ -82,8 +105,11 @@ class BancoChileCreditXLSExtractor:
         Raises:
             ValueError: If the file format is invalid
         """
+        # Detect the correct engine based on file content
+        engine = self._detect_excel_engine(filepath)
+
         # Read the entire file without headers
-        df = pd.read_excel(filepath, header=None, engine="openpyxl")
+        df = pd.read_excel(filepath, header=None, engine=engine)
 
         # Detect statement type
         statement_type = self._detect_statement_type(df)

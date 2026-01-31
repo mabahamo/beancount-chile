@@ -148,7 +148,9 @@ class TestBancoChileCreditXLSExtractor:
         # Verify the test fixture is in old binary format
         with open(FIXTURE_FACTURADO_BINARY, 'rb') as f:
             magic_bytes = f.read(4)
-            assert magic_bytes == b'\xD0\xCF\x11\xE0', "Test fixture must be in old binary .xls format"
+            assert magic_bytes == b'\xD0\xCF\x11\xE0', (
+                "Test fixture must be in old binary .xls format"
+            )
 
         # Extract metadata and transactions
         metadata, transactions = extractor.extract(str(FIXTURE_FACTURADO_BINARY))

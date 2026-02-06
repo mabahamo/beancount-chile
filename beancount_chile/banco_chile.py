@@ -38,8 +38,8 @@ CategorizerFunc = Callable[[date_type, str, str, Decimal, dict], CategorizerRetu
 
 
 def _normalize_account_number(account_number: str) -> str:
-    """Strip dashes and non-digit characters for comparison."""
-    return re.sub(r"\D", "", account_number)
+    """Strip dashes, non-digit characters, and leading zeros for comparison."""
+    return re.sub(r"\D", "", account_number).lstrip("0")
 
 
 class BancoChileImporter(Importer):

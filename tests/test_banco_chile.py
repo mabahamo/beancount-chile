@@ -83,6 +83,17 @@ class TestBancoChileImporter:
 
         assert importer.identify(FIXTURE_PATH) is True
 
+    def test_identify_without_leading_zeros(self):
+        """Test file identification when leading zeros are stripped."""
+        # Fixture has "00-123-45678-90" (digits: 001234567890)
+        # Importer uses "1234567890" (no leading zeros)
+        importer = BancoChileImporter(
+            account_number="1234567890",
+            account_name="Assets:BancoChile:Checking",
+        )
+
+        assert importer.identify(FIXTURE_PATH) is True
+
     def test_identify_wrong_account(self):
         """Test file identification with wrong account number."""
         importer = BancoChileImporter(

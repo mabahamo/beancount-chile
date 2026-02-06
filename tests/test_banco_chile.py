@@ -73,6 +73,16 @@ class TestBancoChileImporter:
 
         assert importer.identify(FIXTURE_PATH) is True
 
+    def test_identify_digits_only_account(self):
+        """Test file identification with digits-only account number."""
+        # Fixture has "00-123-45678-90", importer uses digits only
+        importer = BancoChileImporter(
+            account_number="001234567890",
+            account_name="Assets:BancoChile:Checking",
+        )
+
+        assert importer.identify(FIXTURE_PATH) is True
+
     def test_identify_wrong_account(self):
         """Test file identification with wrong account number."""
         importer = BancoChileImporter(

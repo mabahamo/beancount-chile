@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import re
 from datetime import date as date_type
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -34,6 +35,11 @@ CategorizerReturn = Optional[Dict[str, Any]]
 
 # Type for the categorizer callable
 CategorizerFunc = Callable[[date_type, str, str, Decimal, dict], CategorizerReturn]
+
+
+def _normalize_account_number(account_number: str) -> str:
+    """Strip dashes and non-digit characters for comparison."""
+    return re.sub(r"\D", "", account_number)
 
 
 class BancoChileImporter(Importer):
@@ -120,8 +126,10 @@ class BancoChileImporter(Importer):
             # Try to extract metadata
             metadata, _ = extractor.extract(str(filepath))
 
-            # Check if account number matches
-            return metadata.account_number == self.account_number
+            # Check if account number matches (normalize to digits only)
+            return _normalize_account_number(
+                metadata.account_number
+            ) == _normalize_account_number(self.account_number)
 
         except (ValueError, Exception) as e:
             logger.debug("Failed to identify %s: %s", filepath, e)

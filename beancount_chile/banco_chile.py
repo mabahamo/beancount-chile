@@ -1,6 +1,7 @@
 """Beancount importer for Banco de Chile account statements."""
 
 import hashlib
+import logging
 from datetime import date as date_type
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -17,6 +18,8 @@ from beancount_chile.extractors.banco_chile_xls import (
     BancoChileXLSExtractor,
 )
 from beancount_chile.helpers import clean_narration, normalize_payee
+
+logger = logging.getLogger(__name__)
 
 # Type alias for categorizer return value
 # Returns a dict with optional fields:
@@ -120,7 +123,8 @@ class BancoChileImporter(Importer):
             # Check if account number matches
             return metadata.account_number == self.account_number
 
-        except (ValueError, Exception):
+        except (ValueError, Exception) as e:
+            logger.debug("Failed to identify %s: %s", filepath, e)
             return False
 
     def account(self, filepath: Path) -> str:

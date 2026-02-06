@@ -9,8 +9,11 @@ import pytest
 from beancount_chile.banco_chile import BancoChileImporter
 from beancount_chile.extractors.banco_chile_xls import BancoChileXLSExtractor
 
-# Path to test fixture
+# Path to test fixtures
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "banco_chile_cartola_sample.xls"
+BINARY_FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "banco_chile_cartola_binary_sample.xls"
+)
 
 
 class TestBancoChileXLSExtractor:
@@ -551,3 +554,118 @@ class TestBancoChileImporter:
             # Should have 2 postings (account + category)
             assert len(txn.postings) == 2
             assert txn.postings[1].account == "Expenses:Shopping"
+
+
+class TestBancoChileXLSExtractorBinary:
+    """Test the XLS extractor with genuine binary (OLE2) XLS files."""
+
+    def test_detect_binary_format(self):
+        """Verify the fixture is a genuine OLE2 binary .xls file."""
+        with open(BINARY_FIXTURE_PATH, "rb") as f:
+            signature = f.read(4)
+        # OLE2 Compound Document signature
+        assert signature == b"\xd0\xcf\x11\xe0"
+
+    def test_engine_detection(self):
+        """Verify xlrd engine is selected for binary XLS."""
+        extractor = BancoChileXLSExtractor()
+        engine = extractor._detect_excel_engine(str(BINARY_FIXTURE_PATH))
+        assert engine == "xlrd"
+
+    def test_extract_metadata_binary(self):
+        """Test metadata extraction from binary XLS."""
+        extractor = BancoChileXLSExtractor()
+        metadata, _ = extractor.extract(str(BINARY_FIXTURE_PATH))
+
+        assert metadata.account_holder == "Juan Pérez González"
+        assert metadata.rut == "12.345.678-9"
+        assert metadata.account_number == "00-123-45678-90"
+        assert metadata.currency == "CLP"
+        assert metadata.available_balance == Decimal("5500000")
+        assert metadata.accounting_balance == Decimal("5000000")
+        assert metadata.total_debits == Decimal("2500000")
+        assert metadata.total_credits == Decimal("1500000")
+        assert metadata.statement_date == datetime(2024, 1, 31)
+
+    def test_extract_transactions_binary(self):
+        """Test transaction extraction from binary XLS."""
+        extractor = BancoChileXLSExtractor()
+        _, transactions = extractor.extract(str(BINARY_FIXTURE_PATH))
+
+        assert len(transactions) == 5
+
+        # Transaction 1: Debit (transfer out)
+        t1 = transactions[0]
+        assert t1.date == datetime(2024, 1, 15)
+        assert "TRASPASO A:Maria González" in t1.description
+        assert t1.channel == "Internet"
+        assert t1.debit == Decimal("500000")
+        assert t1.credit is None
+        assert t1.balance == Decimal("5000000")
+
+        # Transaction 2: Credit (transfer in)
+        t2 = transactions[1]
+        assert t2.date == datetime(2024, 1, 20)
+        assert "TRASPASO DE:Pedro López" in t2.description
+        assert t2.debit is None
+        assert t2.credit == Decimal("300000")
+
+        # Transaction 3: Debit (purchase)
+        t3 = transactions[2]
+        assert t3.date == datetime(2024, 1, 25)
+        assert "JUMBO" in t3.description
+        assert t3.debit == Decimal("85000")
+        assert t3.credit is None
+
+        # Transaction 4: Credit (deposit)
+        t4 = transactions[3]
+        assert t4.date == datetime(2024, 1, 28)
+        assert "DEPOSITO" in t4.description
+        assert t4.debit is None
+        assert t4.credit == Decimal("200000")
+
+        # Transaction 5: Debit (automatic payment)
+        t5 = transactions[4]
+        assert t5.date == datetime(2024, 1, 31)
+        assert "PAC ENTEL" in t5.description
+        assert t5.debit == Decimal("35000")
+        assert t5.credit is None
+
+    def test_importer_identify_binary(self):
+        """Test that identify() works with binary XLS format."""
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+        )
+        assert importer.identify(BINARY_FIXTURE_PATH) is True
+
+    def test_importer_identify_wrong_account_binary(self):
+        """Test that identify() rejects wrong account number for binary XLS."""
+        importer = BancoChileImporter(
+            account_number="00-999-99999-99",
+            account_name="Assets:BancoChile:Checking",
+        )
+        assert importer.identify(BINARY_FIXTURE_PATH) is False
+
+    def test_importer_extract_binary(self):
+        """Test full extraction pipeline with binary XLS format."""
+        importer = BancoChileImporter(
+            account_number="00-123-45678-90",
+            account_name="Assets:BancoChile:Checking",
+        )
+
+        entries = importer.extract(BINARY_FIXTURE_PATH)
+
+        # Should have balance assertion + 5 transactions
+        balance_entries = [e for e in entries if e.__class__.__name__ == "Balance"]
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        assert len(balance_entries) == 1
+        assert len(txn_entries) == 5
+
+        # Verify transaction structure
+        for txn in txn_entries:
+            assert txn.date is not None
+            assert len(txn.postings) == 1
+            assert txn.postings[0].account == "Assets:BancoChile:Checking"
+            assert txn.postings[0].units.currency == "CLP"

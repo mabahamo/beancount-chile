@@ -14,9 +14,7 @@ class TestGenerateReceiptLink:
         assert result == frozenset()
 
     def test_returns_frozenset_with_single_link(self):
-        result = generate_receipt_link(
-            date(2024, 1, 15), "Test", ["/receipts/a.pdf"]
-        )
+        result = generate_receipt_link(date(2024, 1, 15), "Test", ["/receipts/a.pdf"])
         assert len(result) == 1
         (link,) = result
         assert link.startswith("rcpt-")

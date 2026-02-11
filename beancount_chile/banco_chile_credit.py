@@ -378,9 +378,7 @@ class BancoChileCreditImporter(Importer):
             )
 
         # Generate a deterministic link if there are receipts
-        txn_links = generate_receipt_link(
-            transaction.date.date(), payee, receipt_paths
-        )
+        txn_links = generate_receipt_link(transaction.date.date(), payee, receipt_paths)
 
         # Create transaction
         txn = data.Transaction(

@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import re
+import unicodedata
 from datetime import date as date_type
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -375,8 +376,10 @@ class BancoChileImporter(Importer):
         if receipt_paths:
             # Create a deterministic link ID based on date, payee, and receipt paths
             # This ensures the same receipts always generate the same link
+            # Normalize to NFC so macOS (NFD filenames) and Linux (NFC) produce the same hash
             date_str = transaction.date.date().isoformat()
-            paths_str = ",".join(sorted(receipt_paths))
+            normalized_paths = [unicodedata.normalize("NFC", p) for p in receipt_paths]
+            paths_str = ",".join(sorted(normalized_paths))
             hash_input = f"{date_str}:{payee}:{paths_str}"
             link_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:8]
             link_id = f"rcpt-{link_hash}"

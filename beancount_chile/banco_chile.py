@@ -1,9 +1,7 @@
 """Beancount importer for Banco de Chile account statements."""
 
-import hashlib
 import logging
 import re
-import unicodedata
 from datetime import date as date_type
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -19,7 +17,12 @@ from beancount_chile.extractors.banco_chile_xls import (
     BancoChileTransaction,
     BancoChileXLSExtractor,
 )
-from beancount_chile.helpers import clean_narration, normalize_payee
+from beancount_chile.helpers import (
+    clean_narration,
+    create_receipt_documents,
+    generate_receipt_link,
+    normalize_payee,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -372,19 +375,9 @@ class BancoChileImporter(Importer):
             )
 
         # Generate a deterministic link if there are receipts
-        txn_links: frozenset[str] = frozenset()
-        if receipt_paths:
-            # Create a deterministic link ID based on date, payee, and receipt paths
-            # This ensures the same receipts always generate the same link
-            # Normalize to NFC so macOS (NFD) and Linux (NFC)
-            # produce the same hash
-            date_str = transaction.date.date().isoformat()
-            normalized_paths = [unicodedata.normalize("NFC", p) for p in receipt_paths]
-            paths_str = ",".join(sorted(normalized_paths))
-            hash_input = f"{date_str}:{payee}:{paths_str}"
-            link_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:8]
-            link_id = f"rcpt-{link_hash}"
-            txn_links = frozenset([link_id])
+        txn_links = generate_receipt_link(
+            transaction.date.date(), payee, receipt_paths
+        )
 
         # Create transaction
         txn = data.Transaction(
@@ -399,16 +392,8 @@ class BancoChileImporter(Importer):
         )
 
         # Create Document entries for receipts
-        documents: List[data.Document] = []
-        for receipt_path in receipt_paths:
-            doc = data.Document(
-                meta=data.new_metadata(str(filepath), 0),
-                date=transaction.date.date(),
-                account=account_name,
-                filename=receipt_path,
-                tags=frozenset(),
-                links=txn_links if txn_links else frozenset(),
-            )
-            documents.append(doc)
+        documents = create_receipt_documents(
+            receipt_paths, filepath, transaction.date.date(), account_name, txn_links
+        )
 
         return txn, documents

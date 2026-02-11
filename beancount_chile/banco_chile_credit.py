@@ -379,7 +379,8 @@ class BancoChileCreditImporter(Importer):
         if receipt_paths:
             # Create a deterministic link ID based on date, payee, and receipt paths
             # This ensures the same receipts always generate the same link
-            # Normalize to NFC so macOS (NFD filenames) and Linux (NFC) produce the same hash
+            # Normalize to NFC so macOS (NFD) and Linux (NFC)
+            # produce the same hash
             date_str = transaction.date.date().isoformat()
             normalized_paths = [unicodedata.normalize("NFC", p) for p in receipt_paths]
             paths_str = ",".join(sorted(normalized_paths))

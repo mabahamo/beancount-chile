@@ -1,15 +1,19 @@
 """Beancount importer for Banco de Chile credit card statements."""
 
+import logging
 from datetime import date as date_type
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from beancount.core import amount, data, flags
 from beancount.core.number import D
 from beangulp import Importer
 
+from beancount_chile.extractors.banco_chile_credit_pdf import (
+    BancoChileCreditPDFExtractor,
+)
 from beancount_chile.extractors.banco_chile_credit_xls import (
     BancoChileCreditTransaction,
     BancoChileCreditXLSExtractor,
@@ -21,6 +25,8 @@ from beancount_chile.helpers import (
     generate_receipt_link,
     normalize_payee,
 )
+
+logger = logging.getLogger(__name__)
 
 # Type alias for categorizer return value
 # Returns a dict with optional fields:
@@ -38,7 +44,7 @@ CategorizerFunc = Callable[[date_type, str, str, Decimal, dict], CategorizerRetu
 
 
 class BancoChileCreditImporter(Importer):
-    """Importer for Banco de Chile credit card XLS/XLSX statements."""
+    """Importer for Banco de Chile credit card XLS/XLSX/PDF statements."""
 
     def __init__(
         self,
@@ -73,7 +79,30 @@ class BancoChileCreditImporter(Importer):
         self.currency = currency
         self.file_encoding = file_encoding
         self.categorizer = categorizer
-        self.extractor = BancoChileCreditXLSExtractor()
+        self.xls_extractor = BancoChileCreditXLSExtractor()
+        self.pdf_extractor = BancoChileCreditPDFExtractor()
+
+    def _get_extractor(
+        self, filepath: Path
+    ) -> Optional[Union[BancoChileCreditXLSExtractor, BancoChileCreditPDFExtractor]]:
+        """
+        Get the appropriate extractor based on file extension.
+
+        Args:
+            filepath: Path to the file
+
+        Returns:
+            Extractor instance or None if unsupported format
+        """
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+        suffix = filepath.suffix.lower()
+        if suffix in [".xls", ".xlsx"]:
+            return self.xls_extractor
+        elif suffix == ".pdf":
+            return self.pdf_extractor
+        else:
+            return None
 
     def identify(self, filepath: Path) -> bool:
         """
@@ -85,22 +114,25 @@ class BancoChileCreditImporter(Importer):
         Returns:
             True if the file can be processed, False otherwise
         """
-        # Convert to Path if string (beangulp may pass strings)
         if isinstance(filepath, str):
             filepath = Path(filepath)
 
-        # Check file extension
-        if filepath.suffix.lower() not in [".xls", ".xlsx"]:
+        extractor = self._get_extractor(filepath)
+        if not extractor:
             return False
 
         try:
-            # Try to extract metadata
-            metadata, _ = self.extractor.extract(str(filepath))
+            # For PDFs, verify the currency matches before full extraction
+            if isinstance(extractor, BancoChileCreditPDFExtractor):
+                pdf_currency = extractor.get_currency(str(filepath))
+                if pdf_currency != self.currency:
+                    return False
 
-            # Check if card last 4 digits match
+            metadata, _ = extractor.extract(str(filepath))
             return metadata.card_last_four == self.card_last_four
 
-        except (ValueError, Exception):
+        except (ValueError, Exception) as e:
+            logger.debug("Failed to identify %s: %s", filepath, e)
             return False
 
     def account(self, filepath: Path) -> str:
@@ -125,8 +157,12 @@ class BancoChileCreditImporter(Importer):
         Returns:
             Statement date
         """
+        extractor = self._get_extractor(filepath)
+        if not extractor:
+            return None
+
         try:
-            metadata, _ = self.extractor.extract(str(filepath))
+            metadata, _ = extractor.extract(str(filepath))
             return metadata.statement_date
         except Exception:
             return None
@@ -141,17 +177,25 @@ class BancoChileCreditImporter(Importer):
         Returns:
             Suggested filename
         """
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+
+        extractor = self._get_extractor(filepath)
+        if not extractor:
+            return None
+
         try:
-            metadata, _ = self.extractor.extract(str(filepath))
+            metadata, _ = extractor.extract(str(filepath))
             date_str = metadata.statement_date.strftime("%Y-%m-%d")
             statement_type = (
                 "facturado"
                 if metadata.statement_type == StatementType.FACTURADO
                 else "no_facturado"
             )
+            ext = filepath.suffix.lower()
             filename = (
                 f"{date_str}_banco_chile_credit_"
-                f"{self.card_last_four}_{statement_type}.xls"
+                f"{self.card_last_four}_{self.currency}_{statement_type}{ext}"
             )
             return filename
         except Exception:
@@ -170,7 +214,11 @@ class BancoChileCreditImporter(Importer):
         Returns:
             List of Beancount entries
         """
-        metadata, transactions = self.extractor.extract(str(filepath))
+        extractor = self._get_extractor(filepath)
+        if not extractor:
+            return []
+
+        metadata, transactions = extractor.extract(str(filepath))
 
         entries = []
 

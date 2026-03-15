@@ -692,7 +692,7 @@ class TestBancoChileXLSExtractorBinary:
             assert txn.postings[0].units.currency == "CLP"
 
     def test_transfer_account_returns_account(self):
-        """Test transfer_account used as second posting."""
+        """Test transfer_account callback used as second posting, categorizer skipped."""
         categorizer_called = []
 
         def tracking_categorizer(date, payee, narration, amount, metadata):
@@ -717,8 +717,7 @@ class TestBancoChileXLSExtractorBinary:
             assert len(txn.postings) == 2
             assert txn.postings[0].account == "Assets:BancoChile:Checking"
             assert txn.postings[1].account == "Assets:BancoChile:LineaCredito"
-            total = txn.postings[0].units.number + txn.postings[1].units.number
-            assert total == Decimal("0")
+            assert txn.postings[0].units.number + txn.postings[1].units.number == Decimal("0")
 
         # Categorizer should never have been called
         assert len(categorizer_called) == 0

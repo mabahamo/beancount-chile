@@ -63,7 +63,7 @@ class TestParseCreditCardNumber:
     """Test credit card number extraction."""
 
     def test_standard_format(self):
-        assert parse_credit_card_number("XXXX XXX3 0030 4545") == "4545"
+        assert parse_credit_card_number("XXXX XXX3 0030 5678") == "5678"
 
     def test_masked_format(self):
         assert parse_credit_card_number("XXXX XXXX XXXX 1234") == "1234"
@@ -91,24 +91,24 @@ class TestParseNacionalTransactionLine:
     """Test Nacional (CLP) transaction line parsing."""
 
     def test_standard_transaction(self):
-        line = "ST.DOMINGO 23/05/25 260510877271 RESTAURANTE QUERIDA SANTO DOMING $ 60.610 $ 60.610 01/01 $ 60.610"
+        line = "VALPARAISO 23/05/25 111122223333 RESTAURANTE EL SOL VALPARAISO $ 60.610 $ 60.610 01/01 $ 60.610"
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
         assert txn.date == datetime(2025, 5, 23)
-        assert "RESTAURANTE QUERIDA" in txn.description
+        assert "RESTAURANTE EL SOL" in txn.description
         assert txn.amount == Decimal("60610")
         assert txn.installments == "01/01"
 
     def test_large_amount(self):
-        line = "SANTIAGO 25/05/25 260511178094 TODOSOLARCHILE SANTIAGO $ 1.322.000 $ 1.322.000 01/01 $ 1.322.000"
+        line = "SANTIAGO 25/05/25 444455556666 TIENDA GRANDE SANTIAGO $ 1.322.000 $ 1.322.000 01/01 $ 1.322.000"
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
         assert txn.amount == Decimal("1322000")
 
     def test_negative_amount_discount(self):
-        line = "03/06/25 030600003100 Dcto. por compras $ -20.000 $ -20.000 01/01 $ -20.000"
+        line = "03/06/25 777788889999 Dcto. por compras $ -20.000 $ -20.000 01/01 $ -20.000"
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
@@ -116,7 +116,7 @@ class TestParseNacionalTransactionLine:
         assert "Dcto. por compras" in txn.description
 
     def test_commission(self):
-        line = "05/06/25 050600000000 COMISION MENSUAL POR MANTENCION $ 13.721 $ 13.721 01/01 $ 13.721"
+        line = "05/06/25 000000000000 COMISION MENSUAL POR MANTENCION $ 13.721 $ 13.721 01/01 $ 13.721"
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
@@ -129,7 +129,7 @@ class TestParseNacionalTransactionLine:
         assert parse_nacional_transaction_line("", 2025) is None
 
     def test_small_amount(self):
-        line = "SANTIAGO 24/05/25 260511640540 ESTAC MEGACENTER 1 SANTIAGO $ 900 $ 900 01/01 $ 900"
+        line = "SANTIAGO 24/05/25 123456789012 ESTACIONAMIENTO ABC SANTIAGO $ 900 $ 900 01/01 $ 900"
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
@@ -140,21 +140,21 @@ class TestParseInternacionalTransactionLine:
     """Test Internacional (USD) transaction line parsing."""
 
     def test_standard_transaction(self):
-        line = "2605 74007035146920008073494 25/05/25 www.aliexpress.com WWW.ALIEXPR GB 93.762,00 100,00"
+        line = "2605 11112222333344445555666 25/05/25 www.tienda-online.com WWW.TIENDA GB 93.762,00 100,00"
         txn = parse_internacional_transaction_line(line, 2025)
 
         assert txn is not None
         assert txn.date == datetime(2025, 5, 25)
-        assert "www.aliexpress.com" in txn.description
+        assert "www.tienda-online.com" in txn.description
         assert txn.amount == Decimal("100.00")
 
     def test_us_dollar_transaction(self):
-        line = "0606 24011345156100126973474 05/06/25 CLAUDE.AI SUBSCRIPT ANTHROPIC.C US 23,80 23,80"
+        line = "0606 99988877766655544433322 05/06/25 SERVICIO CLOUD SPA PROVEEDOR.C US 23,80 23,80"
         txn = parse_internacional_transaction_line(line, 2025)
 
         assert txn is not None
         assert txn.amount == Decimal("23.80")
-        assert "CLAUDE.AI SUBSCRIPT" in txn.description
+        assert "SERVICIO CLOUD SPA" in txn.description
 
     def test_payment_negative(self):
         line = "1806 ACV00000000000000000000 18/06/25 Pago Dolar TEF -100,00"
@@ -313,7 +313,7 @@ PAGAR HASTA 18/06/2025"""
     def test_filename_includes_currency(self):
         """Test that generated filename includes currency code."""
         importer = BancoChileCreditImporter(
-            card_last_four="4545",
+            card_last_four="5678",
             account_name="Liabilities:CC",
             currency="CLP",
         )

@@ -108,9 +108,8 @@ def parse_nacional_transaction_line(
     Parse a Nacional (CLP) credit card transaction line from the PDF.
 
     Format examples:
-        ST.DOMINGO 23/05/25 260510877271 RESTAURANTE QUERIDA SANTO DOMING $ 60.610 $ 60.610 01/01 $ 60.610
-        SANTIAGO 25/05/25 260511178094 TODOSOLARCHILE SANTIAGO $ 1.322.000 $ 1.322.000 01/01 $ 1.322.000
-        03/06/25 030600003100 Dcto. por compras $ -20.000 $ -20.000 01/01 $ -20.000
+        CITY DD/MM/YY CODE DESCRIPTION CITY2 $ AMOUNT $ TOTAL NN/NN $ INST_AMOUNT
+        DD/MM/YY CODE DESCRIPTION $ -AMOUNT $ -AMOUNT NN/NN $ -AMOUNT
 
     Returns:
         BancoChileCreditTransaction or None if line doesn't match.
@@ -243,9 +242,8 @@ def parse_internacional_transaction_line(
     Parse an Internacional (USD) credit card transaction line from the PDF.
 
     Format examples:
-        2605 74007035146920008073494 25/05/25 www.aliexpress.com WWW.ALIEXPR GB 93.762,00 100,00
-        0606 24011345156100126973474 05/06/25 CLAUDE.AI SUBSCRIPT ANTHROPIC.C US 23,80 23,80
-        1806 ACV00000000000000000000 18/06/25 Pago Dolar TEF -100,00
+        NNNN REFERENCE DD/MM/YY DESCRIPTION CITY COUNTRY FOREIGN_AMOUNT USD_AMOUNT
+        NNNN REFERENCE DD/MM/YY Pago Dolar TEF -USD_AMOUNT
 
     Returns:
         BancoChileCreditTransaction or None if line doesn't match.

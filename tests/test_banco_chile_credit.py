@@ -705,7 +705,7 @@ class TestBancoChileCreditImporter:
             assert txn.postings[1].account == "Expenses:Shopping:Online"
 
     def test_transfer_account_returns_account(self):
-        """Test transfer_account callback used as second posting, categorizer skipped."""
+        """Test transfer_account used as second posting."""
         categorizer_called = []
 
         def tracking_categorizer(date, payee, narration, amount, metadata):
@@ -730,7 +730,8 @@ class TestBancoChileCreditImporter:
             assert len(txn.postings) == 2
             assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
             assert txn.postings[1].account == "Assets:BancoChile:Checking"
-            assert txn.postings[0].units.number + txn.postings[1].units.number == Decimal("0")
+            total = txn.postings[0].units.number + txn.postings[1].units.number
+            assert total == Decimal("0")
 
         # Categorizer should never have been called
         assert len(categorizer_called) == 0

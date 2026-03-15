@@ -291,7 +291,7 @@ def parse_internacional_transaction_line(
         if line.startswith(pattern):
             return None
 
-    # Pattern: NNNN REFERENCE DD/MM/YY DESCRIPTION CITY COUNTRY [FOREIGN_AMOUNT] USD_AMOUNT
+    # Pattern: NNNN REF DD/MM/YY DESC CITY COUNTRY [FOREIGN] USD
     # The line starts with a 4-digit number
     match = re.match(
         r"(\d{4})\s+(\S+)\s+(\d{2}/\d{2}/\d{2})\s+(.+)",
@@ -408,7 +408,6 @@ class BancoChileCreditPDFExtractor:
 
         # Billing period
         billing_start = None
-        billing_end = None
         period_match = re.search(
             r"PER[ÍI]ODO\s+FACTURADO\s+(?:DESDE\s+)?(\d{2}/\d{2}/\d{4})\s+"
             r"(?:HASTA\s+)?(\d{2}/\d{2}/\d{4})?",
@@ -420,8 +419,6 @@ class BancoChileCreditPDFExtractor:
             )
         if period_match:
             billing_start = _parse_date(period_match.group(1))
-            if period_match.lastindex and period_match.lastindex >= 2:
-                billing_end = _parse_date(period_match.group(2))
 
         # Due date
         due_date = None

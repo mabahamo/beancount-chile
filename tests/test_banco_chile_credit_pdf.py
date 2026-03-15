@@ -5,8 +5,6 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from beancount_chile.banco_chile_credit import BancoChileCreditImporter
 from beancount_chile.extractors.banco_chile_credit_pdf import (
     BancoChileCreditPDFExtractor,
@@ -91,24 +89,35 @@ class TestParseNacionalTransactionLine:
     """Test Nacional (CLP) transaction line parsing."""
 
     def test_standard_transaction(self):
-        line = "VALPARAISO 23/05/25 111122223333 RESTAURANTE EL SOL VALPARAISO $ 60.610 $ 60.610 01/01 $ 60.610"
+        line = (
+            "VALPARAISO 23/05/25 111122223333"
+            " RESTAURANTE SOL VALPARAISO"
+            " $ 60.610 $ 60.610 01/01 $ 60.610"
+        )
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
         assert txn.date == datetime(2025, 5, 23)
-        assert "RESTAURANTE EL SOL" in txn.description
+        assert "RESTAURANTE SOL" in txn.description
         assert txn.amount == Decimal("60610")
         assert txn.installments == "01/01"
 
     def test_large_amount(self):
-        line = "SANTIAGO 25/05/25 444455556666 TIENDA GRANDE SANTIAGO $ 1.322.000 $ 1.322.000 01/01 $ 1.322.000"
+        line = (
+            "SANTIAGO 25/05/25 444455556666"
+            " TIENDA GRANDE SANTIAGO"
+            " $ 1.322.000 $ 1.322.000 01/01 $ 1.322.000"
+        )
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
         assert txn.amount == Decimal("1322000")
 
     def test_negative_amount_discount(self):
-        line = "03/06/25 777788889999 Dcto. por compras $ -20.000 $ -20.000 01/01 $ -20.000"
+        line = (
+            "03/06/25 777788889999 Dcto. por compras"
+            " $ -20.000 $ -20.000 01/01 $ -20.000"
+        )
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
@@ -116,20 +125,34 @@ class TestParseNacionalTransactionLine:
         assert "Dcto. por compras" in txn.description
 
     def test_commission(self):
-        line = "05/06/25 000000000000 COMISION MENSUAL POR MANTENCION $ 13.721 $ 13.721 01/01 $ 13.721"
+        line = (
+            "05/06/25 000000000000"
+            " COMISION MENSUAL POR MANTENCION"
+            " $ 13.721 $ 13.721 01/01 $ 13.721"
+        )
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
         assert txn.amount == Decimal("13721")
 
     def test_skip_header_lines(self):
-        assert parse_nacional_transaction_line("LUGAR DE FECHA", 2025) is None
-        assert parse_nacional_transaction_line("Sin Movimientos", 2025) is None
-        assert parse_nacional_transaction_line("TOTAL TARJETA XXXX", 2025) is None
+        assert parse_nacional_transaction_line(
+            "LUGAR DE FECHA", 2025
+        ) is None
+        assert parse_nacional_transaction_line(
+            "Sin Movimientos", 2025
+        ) is None
+        assert parse_nacional_transaction_line(
+            "TOTAL TARJETA XXXX", 2025
+        ) is None
         assert parse_nacional_transaction_line("", 2025) is None
 
     def test_small_amount(self):
-        line = "SANTIAGO 24/05/25 123456789012 ESTACIONAMIENTO ABC SANTIAGO $ 900 $ 900 01/01 $ 900"
+        line = (
+            "SANTIAGO 24/05/25 123456789012"
+            " ESTACIONAMIENTO ABC SANTIAGO"
+            " $ 900 $ 900 01/01 $ 900"
+        )
         txn = parse_nacional_transaction_line(line, 2025)
 
         assert txn is not None
@@ -140,16 +163,24 @@ class TestParseInternacionalTransactionLine:
     """Test Internacional (USD) transaction line parsing."""
 
     def test_standard_transaction(self):
-        line = "2605 11112222333344445555666 25/05/25 www.tienda-online.com WWW.TIENDA GB 93.762,00 100,00"
+        line = (
+            "2605 11112222333344445555666 25/05/25"
+            " www.tienda.com WWW.TIENDA"
+            " GB 93.762,00 100,00"
+        )
         txn = parse_internacional_transaction_line(line, 2025)
 
         assert txn is not None
         assert txn.date == datetime(2025, 5, 25)
-        assert "www.tienda-online.com" in txn.description
+        assert "www.tienda.com" in txn.description
         assert txn.amount == Decimal("100.00")
 
     def test_us_dollar_transaction(self):
-        line = "0606 99988877766655544433322 05/06/25 SERVICIO CLOUD SPA PROVEEDOR.C US 23,80 23,80"
+        line = (
+            "0606 99988877766655544433322 05/06/25"
+            " SERVICIO CLOUD SPA PROVEEDOR.C"
+            " US 23,80 23,80"
+        )
         txn = parse_internacional_transaction_line(line, 2025)
 
         assert txn is not None
@@ -185,9 +216,9 @@ PERÍODO FACTURADO 07/05/2025 05/06/2025
 PAGAR HASTA 18/06/2025
 MONTO TOTAL FACTURADO A PAGAR $ 150.000
 MONTO MÍNIMO A PAGAR $ 25.000
-SANTIAGO 23/05/25 260510877271 SUPERMERCADO ABC SANTIAGO $ 50.000 $ 50.000 01/01 $ 50.000
-SANTIAGO 24/05/25 260511332487 FARMACIA XYZ SANTIAGO $ 30.000 $ 30.000 01/01 $ 30.000
-05/06/25 050600000000 COMISION MENSUAL POR MANTENCION $ 10.000 $ 10.000 01/01 $ 10.000"""
+SANTIAGO 23/05/25 111100002222 TIENDA ABC SANTIAGO $ 50.000 $ 50.000 01/01 $ 50.000
+SANTIAGO 24/05/25 333300004444 FARMACIA XYZ SANTIAGO $ 30.000 $ 30.000 01/01 $ 30.000
+05/06/25 555500006666 COMISION MANTENCION $ 10.000 $ 10.000 01/01 $ 10.000"""
 
         mock_page = MagicMock()
         mock_page.extract_text.return_value = page_text
@@ -280,7 +311,7 @@ class TestBancoChileCreditImporterWithPDF:
 
     @patch("beancount_chile.extractors.banco_chile_credit_pdf.pdfplumber.open")
     def test_identify_pdf_matches_currency(self, mock_pdfplumber):
-        """CLP importer identifies Nacional PDFs, USD importer identifies Internacional."""
+        """CLP importer identifies Nacional PDFs only."""
         nacional_text = """ESTADO DE CUENTA NACIONAL DE TARJETA DE CRÉDITO
 NOMBRE DEL TITULAR JUAN PÉREZ
 N° DE TARJETA DE CRÉDITO XXXX XXXX XXXX 1234

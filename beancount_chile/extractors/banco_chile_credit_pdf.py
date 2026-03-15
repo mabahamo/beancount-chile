@@ -380,18 +380,14 @@ class BancoChileCreditPDFExtractor:
 
         return metadata, transactions
 
-    def _extract_metadata(
-        self, text: str, currency: str
-    ) -> BancoChileCreditMetadata:
+    def _extract_metadata(self, text: str, currency: str) -> BancoChileCreditMetadata:
         """Extract metadata from the PDF text."""
         # Card holder
         holder_match = re.search(r"NOMBRE DEL TITULAR\s+(.+)", text)
         account_holder = holder_match.group(1).strip() if holder_match else "Unknown"
 
         # Card number - extract last 4 digits
-        card_match = re.search(
-            r"N[°º]\s*DE\s*TARJETA\s*DE\s*CR[ÉE]DITO\s+(.+)", text
-        )
+        card_match = re.search(r"N[°º]\s*DE\s*TARJETA\s*DE\s*CR[ÉE]DITO\s+(.+)", text)
         card_last_four = "0000"
         if card_match:
             card_last_four = parse_credit_card_number(card_match.group(1))

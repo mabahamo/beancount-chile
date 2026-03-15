@@ -136,15 +136,9 @@ class TestParseNacionalTransactionLine:
         assert txn.amount == Decimal("13721")
 
     def test_skip_header_lines(self):
-        assert parse_nacional_transaction_line(
-            "LUGAR DE FECHA", 2025
-        ) is None
-        assert parse_nacional_transaction_line(
-            "Sin Movimientos", 2025
-        ) is None
-        assert parse_nacional_transaction_line(
-            "TOTAL TARJETA XXXX", 2025
-        ) is None
+        assert parse_nacional_transaction_line("LUGAR DE FECHA", 2025) is None
+        assert parse_nacional_transaction_line("Sin Movimientos", 2025) is None
+        assert parse_nacional_transaction_line("TOTAL TARJETA XXXX", 2025) is None
         assert parse_nacional_transaction_line("", 2025) is None
 
     def test_small_amount(self):

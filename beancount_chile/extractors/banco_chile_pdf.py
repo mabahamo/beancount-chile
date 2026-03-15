@@ -368,13 +368,14 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
         "PAGO:DEVOLUCION" in description.upper()
         or "PAGO:DEVOLUCIÓN" in description.upper()
         or "PAGO:PROVEEDORES" in description
+        or "PAGO LINEA DE CRED" in description.upper()
     ):
         # Remove the folio number from numbers list
         # (it's usually 10 digits starting with 0)
         filtered_numbers = []
         for num in numbers:
             # Skip numbers that look like folios (10 digits, starts with 0)
-            if len(num.replace(".", "")) == 10 and num.startswith("0"):
+            if len(num.replace(".", "")) >= 10 and num.startswith("0"):
                 # Add folio to description instead
                 description = description + " " + num
             else:

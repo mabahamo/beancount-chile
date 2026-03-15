@@ -42,6 +42,10 @@ CategorizerReturn = Optional[Dict[str, Any]]
 # Type for the categorizer callable
 CategorizerFunc = Callable[[date_type, str, str, Decimal, dict], CategorizerReturn]
 
+# Type for the transfer_account callable
+# Returns an account name string if this is a transfer, or None to fall through
+TransferAccountFunc = Callable[[date_type, str, str, Decimal, dict], Optional[str]]
+
 
 class BancoChileCreditImporter(Importer):
     """Importer for Banco de Chile credit card XLS/XLSX/PDF statements."""
@@ -53,6 +57,7 @@ class BancoChileCreditImporter(Importer):
         currency: str = "CLP",
         file_encoding: str = "utf-8",
         categorizer: Optional[CategorizerFunc] = None,
+        transfer_account: Optional[TransferAccountFunc] = None,
     ):
         """
         Initialize the Banco de Chile credit card importer.
@@ -73,12 +78,16 @@ class BancoChileCreditImporter(Importer):
                 - receipts: List[str] - list of paths to receipt files
                 - metadata: Dict[str, Any] - custom metadata to add to the transaction
                 Returns None for no categorization
+            transfer_account: Optional callable with same signature as categorizer
+                but returns just an account name string (or None). Called before
+                categorizer to detect inter-account transfers.
         """
         self.card_last_four = card_last_four
         self.account_name = account_name
         self.currency = currency
         self.file_encoding = file_encoding
         self.categorizer = categorizer
+        self.transfer_account = transfer_account
         self.xls_extractor = BancoChileCreditXLSExtractor()
         self.pdf_extractor = BancoChileCreditPDFExtractor()
 
@@ -335,9 +344,22 @@ class BancoChileCreditImporter(Importer):
             "card_type": transaction.card_type,
         }
 
-        # Call categorizer if provided
+        # Check for inter-account transfer first
+        category_account = None
+        if self.transfer_account:
+            transfer_result = self.transfer_account(
+                transaction.date.date(),
+                payee,
+                narration,
+                txn_amount,
+                categorizer_metadata,
+            )
+            if transfer_result:
+                category_account = transfer_result
+
+        # Fall through to categorizer only if no transfer detected
         categorizer_result = None
-        if self.categorizer:
+        if not category_account and self.categorizer:
             categorizer_result = self.categorizer(
                 transaction.date.date(),
                 payee,
@@ -348,7 +370,6 @@ class BancoChileCreditImporter(Importer):
 
         # Extract overrides from categorizer result
         subaccount_suffix = None
-        category_account = None
         split_postings = None
         receipt_paths: List[str] = []
 

@@ -703,3 +703,87 @@ class TestBancoChileCreditImporter:
             # Should have 2 postings (credit card + category)
             assert len(txn.postings) == 2
             assert txn.postings[1].account == "Expenses:Shopping:Online"
+
+    def test_transfer_account_returns_account(self):
+        """Test transfer_account callback used as second posting, categorizer skipped."""
+        categorizer_called = []
+
+        def tracking_categorizer(date, payee, narration, amount, metadata):
+            categorizer_called.append(True)
+            return {"category": "Expenses:SinClasificar"}
+
+        def transfer_func(date, payee, narration, amount, metadata):
+            return "Assets:BancoChile:Checking"
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=tracking_categorizer,
+            transfer_account=transfer_func,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        assert len(txn_entries) > 0
+        for txn in txn_entries:
+            assert len(txn.postings) == 2
+            assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
+            assert txn.postings[1].account == "Assets:BancoChile:Checking"
+            assert txn.postings[0].units.number + txn.postings[1].units.number == Decimal("0")
+
+        # Categorizer should never have been called
+        assert len(categorizer_called) == 0
+
+    def test_transfer_account_returns_none(self):
+        """Test transfer_account returns None falls through to categorizer."""
+        categorizer_called = []
+
+        def tracking_categorizer(date, payee, narration, amount, metadata):
+            categorizer_called.append(True)
+            return {"category": "Expenses:Tracked"}
+
+        def transfer_func(date, payee, narration, amount, metadata):
+            return None
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=tracking_categorizer,
+            transfer_account=transfer_func,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        assert len(txn_entries) > 0
+        for txn in txn_entries:
+            assert len(txn.postings) == 2
+            assert txn.postings[1].account == "Expenses:Tracked"
+
+        # Categorizer should have been called for each transaction
+        assert len(categorizer_called) == len(txn_entries)
+
+    def test_transfer_account_not_provided(self):
+        """Test backwards compatibility when transfer_account is not provided."""
+        categorizer_called = []
+
+        def tracking_categorizer(date, payee, narration, amount, metadata):
+            categorizer_called.append(True)
+            return {"category": "Expenses:Default"}
+
+        importer = BancoChileCreditImporter(
+            card_last_four="1234",
+            account_name="Liabilities:CreditCard:BancoChile",
+            categorizer=tracking_categorizer,
+        )
+
+        entries = importer.extract(FIXTURE_FACTURADO)
+        txn_entries = [e for e in entries if e.__class__.__name__ == "Transaction"]
+
+        assert len(txn_entries) > 0
+        for txn in txn_entries:
+            assert len(txn.postings) == 2
+            assert txn.postings[1].account == "Expenses:Default"
+
+        assert len(categorizer_called) == len(txn_entries)

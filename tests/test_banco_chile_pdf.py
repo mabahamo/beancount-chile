@@ -223,8 +223,8 @@ class TestParseTransactionLine:
         assert txn is not None
         assert "PAGO:DE SUELDOS" in txn.description
         assert "0712345678" in txn.description  # Folio in description, not amount
-        assert txn.debit == Decimal("4264803")
-        assert txn.credit is None
+        assert txn.credit == Decimal("4264803")
+        assert txn.debit is None
 
     def test_transferencia_desde_linea_credito(self):
         """Test TRANSFERENCIA DESDE is treated as credit (ingreso)."""

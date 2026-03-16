@@ -354,6 +354,8 @@ class BancoChileCreditImporter(Importer):
                 txn_amount,
                 categorizer_metadata,
             )
+            if transfer_result == "SKIP":
+                return (None, [])
             if transfer_result:
                 category_account = transfer_result
 

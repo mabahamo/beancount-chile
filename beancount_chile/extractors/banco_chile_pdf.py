@@ -351,14 +351,17 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
     rest = line[match.end() :].strip()
 
     # Extract all numbers from the line
-    number_pattern = r"\d+(?:\.\d+)*"
-    numbers = re.findall(number_pattern, rest)
+    # Use negative lookbehind to avoid matching digits embedded in
+    # alphanumeric tokens like "B9" or "C2"
+    number_pattern = r"(?<![A-Za-z])\d+(?:\.\d+)*"
+    number_matches = list(re.finditer(number_pattern, rest))
+    numbers = [m.group() for m in number_matches]
 
     if len(numbers) < 1:
         return None
 
-    # Find where numbers start in the string to extract description
-    first_number_pos = rest.find(numbers[0])
+    # Find where first number starts to extract description
+    first_number_pos = number_matches[0].start()
     description = rest[:first_number_pos].strip()
 
     # Special case: PAGO transactions have the folio number embedded
@@ -368,17 +371,26 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
         description.upper().startswith("PAGO:")
         or "PAGO LINEA DE CRED" in description.upper()
     ):
-        # Remove the folio number from numbers list
-        # (it's usually 10 digits starting with 0)
-        filtered_numbers = []
-        for num in numbers:
-            # Skip numbers that look like folios (10 digits, starts with 0)
-            if len(num.replace(".", "")) >= 10 and num.startswith("0"):
-                # Add folio to description instead
-                description = description + " " + num
+        # Filter out folio numbers: 10+ raw digits with no dot separators.
+        # Real CLP amounts always use dots as thousand separators in the PDF,
+        # so a 10+ digit number without dots is always a reference/folio.
+        filtered_matches = []
+        for match in number_matches:
+            num = match.group()
+            if len(num) >= 10 and "." not in num:
+                pass  # Skip folio
             else:
-                filtered_numbers.append(num)
-        numbers = filtered_numbers
+                filtered_matches.append(match)
+
+        # Recalculate description to include everything before the first
+        # real amount — this captures folio numbers and channel keywords
+        # that appear between the description and the amounts.
+        if filtered_matches:
+            first_amount_pos = filtered_matches[0].start()
+            description = rest[:first_amount_pos].strip()
+            numbers = [m.group() for m in filtered_matches]
+        else:
+            numbers = []
 
     # Extract channel from description and clean it
     description, channel = extract_channel_from_description(description)
@@ -410,6 +422,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
             or "PAGO:PROVEEDORES" in description
             or "PAGO:DE SUELDOS" in description
             or "TRANSFERENCIA DESDE" in description
+            or "ABONO" in description.upper()
         )
 
         if is_ingreso:
@@ -432,6 +445,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
             or "PAGO:PROVEEDORES" in description
             or "PAGO:DE SUELDOS" in description
             or "TRANSFERENCIA DESDE" in description
+            or "ABONO" in description.upper()
         )
 
         if is_ingreso:
@@ -454,6 +468,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
             or "PAGO:PROVEEDORES" in description
             or "PAGO:DE SUELDOS" in description
             or "TRANSFERENCIA DESDE" in description
+            or "ABONO" in description.upper()
         )
 
         if is_ingreso:

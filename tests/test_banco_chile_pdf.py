@@ -235,6 +235,53 @@ class TestParseTransactionLine:
         assert txn.credit == Decimal("351")
         assert txn.debit is None
 
+    def test_description_with_embedded_digits_single_amount(self):
+        """Test digits in alphanumeric tokens (e.g. B9) aren't amounts."""
+        line = "03/03 PAGO:SOMECLOUD B9 I CENTRAL 8.190"
+        txn = parse_transaction_line(line, 2025)
+
+        assert txn is not None
+        assert txn.debit == Decimal("8190")
+        assert txn.credit is None
+        assert txn.channel == "CENTRAL"
+        assert "SOMECLOUD B9 I" in txn.description
+
+    def test_description_with_embedded_digits_with_balance(self):
+        """Test that digits in tokens like C2 are not parsed as amounts."""
+        line = "17/03 PAGO:SOMESERVICE C2 STO CENTRAL 133.681 2.338.132"
+        txn = parse_transaction_line(line, 2025)
+
+        assert txn is not None
+        assert txn.debit == Decimal("133681")
+        assert txn.credit is None
+        assert txn.balance == Decimal("2338132")
+        assert txn.channel == "CENTRAL"
+        assert "SOMESERVICE C2 STO" in txn.description
+
+    def test_abono_por_captaciones_is_credit(self):
+        """Test that ABONO POR CAPTACIONES is treated as credit (ingreso)."""
+        line = "06/03 ABONO POR CAPTACIONES INTERNET 501.600 4.086.384"
+        txn = parse_transaction_line(line, 2025)
+
+        assert txn is not None
+        assert txn.credit == Decimal("501600")
+        assert txn.debit is None
+        assert txn.channel == "INTERNET"
+        assert txn.balance == Decimal("4086384")
+
+    def test_pago_proveedores_folio_not_starting_with_zero(self):
+        """Test PAGO:PROVEEDORES with folio not starting with 0."""
+        line = "24/03 PAGO:PROVEEDORES 2005078957 CENTRAL 40.000 3.182.516"
+        txn = parse_transaction_line(line, 2025)
+
+        assert txn is not None
+        assert "PAGO:PROVEEDORES" in txn.description
+        assert "2005078957" in txn.description
+        assert txn.credit == Decimal("40000")
+        assert txn.debit is None
+        assert txn.balance == Decimal("3182516")
+        assert txn.channel == "CENTRAL"
+
     def test_skip_header_lines(self):
         """Test that header lines are skipped."""
         assert parse_transaction_line("DETALLE DE TRANSACCION", 2025) is None

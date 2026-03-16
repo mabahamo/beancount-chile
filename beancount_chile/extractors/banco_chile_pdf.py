@@ -410,6 +410,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
             or "Devolucion" in description
             or "REVERSO" in description
             or "PAGO:PROVEEDORES" in description
+            or "TRANSFERENCIA DESDE" in description
         )
 
         if is_ingreso:
@@ -430,6 +431,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
             or "Devolucion" in description
             or "REVERSO" in description
             or "PAGO:PROVEEDORES" in description
+            or "TRANSFERENCIA DESDE" in description
         )
 
         if is_ingreso:
@@ -450,6 +452,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
             or "Devolucion" in description
             or "REVERSO" in description
             or "PAGO:PROVEEDORES" in description
+            or "TRANSFERENCIA DESDE" in description
         )
 
         if is_ingreso:

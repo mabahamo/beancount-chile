@@ -215,6 +215,15 @@ class TestParseTransactionLine:
         assert txn.debit == Decimal("351")
         assert txn.credit is None
 
+    def test_transferencia_desde_linea_credito(self):
+        """Test TRANSFERENCIA DESDE is treated as credit (ingreso)."""
+        line = "20/11 TRANSFERENCIA DESDE LINEA DE CREDI CENTRAL 351 399.649"
+        txn = parse_transaction_line(line, 2024)
+
+        assert txn is not None
+        assert txn.credit == Decimal("351")
+        assert txn.debit is None
+
     def test_skip_header_lines(self):
         """Test that header lines are skipped."""
         assert parse_transaction_line("DETALLE DE TRANSACCION", 2025) is None

@@ -1,8 +1,8 @@
 """Beancount importer for Banco de Chile account statements."""
 
+import copy
 import logging
 import re
-import copy
 from datetime import date as date_type
 from datetime import datetime, timedelta
 from decimal import Decimal

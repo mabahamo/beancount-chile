@@ -1,5 +1,6 @@
 """Beancount importer for Banco de Chile account statements."""
 
+import copy
 import logging
 import re
 from datetime import date as date_type
@@ -227,11 +228,10 @@ class BancoChileImporter(Importer):
         # Add a balance assertion at the end of the statement
         # Use metadata.accounting_balance (SALDO FINAL) instead of
         # last_transaction.balance which can be 0 for PDF files
-        # Balance assertions in Beancount check the balance at the BEGINNING of
-        # the specified date, so we set the date to the day AFTER the statement
-        # date to verify the final balance after all transactions
         if metadata.accounting_balance:
             balance_amount = D(str(metadata.accounting_balance))
+            # Balance assertions check the balance at the BEGINNING of the date,
+            # so we use statement_date + 1 day to assert after all transactions.
             balance_date = metadata.statement_date.date() + timedelta(days=1)
             balance_entry = data.Balance(
                 meta=data.new_metadata(str(filepath), 0),
@@ -243,8 +243,21 @@ class BancoChileImporter(Importer):
             )
             entries.append(balance_entry)
 
+        # Clamp transactions dated before the statement period to the 1st
+        # of the month.  The bank occasionally includes prior-period entries
+        # (e.g. "ABONO POR CAPTACIONES" dated Mar 31 in the April cartola)
+        # which would otherwise conflict with the previous month's balance
+        # assertion.
+        stmt = metadata.statement_date.date()
+        period_start = stmt.replace(day=1)
+
         # Process transactions in reverse order (oldest first)
         for transaction in reversed(transactions):
+            if transaction.date.date() < period_start:
+                transaction = copy.copy(transaction)
+                transaction.date = datetime.combine(
+                    period_start, transaction.date.time()
+                )
             txn, documents = self._create_transaction_entry(transaction, filepath)
             if txn:
                 entries.append(txn)

@@ -350,11 +350,15 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
     # Remove date from line
     rest = line[match.end() :].strip()
 
+    # Remove reference numbers like "N°32323877" before extracting amounts.
+    # These are document/transaction IDs, not monetary values.
+    rest_for_numbers = re.sub(r"N°\d+", "", rest)
+
     # Extract all numbers from the line
     # Use negative lookbehind to avoid matching digits embedded in
     # alphanumeric tokens like "B9" or "C2"
     number_pattern = r"(?<![A-Za-z])\d+(?:\.\d+)*"
-    number_matches = list(re.finditer(number_pattern, rest))
+    number_matches = list(re.finditer(number_pattern, rest_for_numbers))
     numbers = [m.group() for m in number_matches]
 
     if len(numbers) < 1:
@@ -362,7 +366,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
 
     # Find where first number starts to extract description
     first_number_pos = number_matches[0].start()
-    description = rest[:first_number_pos].strip()
+    description = rest_for_numbers[:first_number_pos].strip()
 
     # Special case: PAGO transactions have the folio number embedded
     # Format: "PAGO:Devolucion 0764749650" or "PAGO:PROVEEDORES 0776016489"
@@ -387,7 +391,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
         # that appear between the description and the amounts.
         if filtered_matches:
             first_amount_pos = filtered_matches[0].start()
-            description = rest[:first_amount_pos].strip()
+            description = rest_for_numbers[:first_amount_pos].strip()
             numbers = [m.group() for m in filtered_matches]
         else:
             numbers = []
@@ -401,82 +405,35 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
     # - If 2 numbers: first is amount (debit or credit), second is balance
     # - If 3+ numbers: last is balance, sum others as amount
 
-    debit = None
-    credit = None
-    balance = Decimal("0")
-
     if len(numbers) == 0:
-        # No valid numbers found - skip this transaction
         return None
 
     elif len(numbers) == 1:
-        # Only amount shown - no balance on this line
-        amount = parse_chilean_amount(numbers[0])
-        balance = Decimal("0")  # No balance shown on this line
-
-        # Determine if it's a credit (ingreso) or debit (egreso)
-        is_ingreso = (
-            "TRASPASO DE" in description
-            or "Devolucion" in description
-            or "REVERSO" in description
-            or "PAGO:PROVEEDORES" in description
-            or "PAGO:DE SUELDOS" in description
-            or "TRANSFERENCIA DESDE" in description
-            or "ABONO" in description.upper()
-        )
-
-        if is_ingreso:
-            credit = amount
-            debit = None
-        else:
-            debit = amount
-            credit = None
-
+        txn_amount = parse_chilean_amount(numbers[0])
+        balance = Decimal("0")
     elif len(numbers) == 2:
-        # Format: AMOUNT BALANCE
-        amount = parse_chilean_amount(numbers[0])
+        txn_amount = parse_chilean_amount(numbers[0])
         balance = parse_chilean_amount(numbers[1])
-
-        # Determine if it's a credit (ingreso) or debit (egreso)
-        is_ingreso = (
-            "TRASPASO DE" in description
-            or "Devolucion" in description
-            or "REVERSO" in description
-            or "PAGO:PROVEEDORES" in description
-            or "PAGO:DE SUELDOS" in description
-            or "TRANSFERENCIA DESDE" in description
-            or "ABONO" in description.upper()
-        )
-
-        if is_ingreso:
-            credit = amount
-            debit = None
-        else:
-            debit = amount
-            credit = None
-
     else:
-        # 3+ numbers: last is balance, sum others as amount
         balance = parse_chilean_amount(numbers[-1])
-        total_amount = sum(parse_chilean_amount(n) for n in numbers[:-1])
+        txn_amount = sum(parse_chilean_amount(n) for n in numbers[:-1])
 
-        # Determine if it's a credit (ingreso) or debit (egreso)
-        is_ingreso = (
-            "TRASPASO DE" in description
-            or "Devolucion" in description
-            or "REVERSO" in description
-            or "PAGO:PROVEEDORES" in description
-            or "PAGO:DE SUELDOS" in description
-            or "TRANSFERENCIA DESDE" in description
-            or "ABONO" in description.upper()
-        )
+    # Determine if it's a credit (ingreso) or debit (egreso)
+    is_ingreso = (
+        "TRASPASO DE" in description
+        or "Devolucion" in description
+        or "REVERSO" in description
+        or "PAGO:PROVEEDORES" in description
+        or "PAGO:DE SUELDOS" in description
+        or "TRANSFERENCIA DESDE" in description
+        or "TRANSFERENCIA DE OTRO BANCO" in description
+        or "ABONO" in description.upper()
+    )
 
-        if is_ingreso:
-            credit = total_amount
-            debit = None
-        else:
-            debit = total_amount
-            credit = None
+    if is_ingreso:
+        debit, credit = None, txn_amount
+    else:
+        debit, credit = txn_amount, None
 
     return BancoChileTransaction(
         date=date,

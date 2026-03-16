@@ -215,6 +215,17 @@ class TestParseTransactionLine:
         assert txn.debit == Decimal("351")
         assert txn.credit is None
 
+    def test_pago_de_sueldos_with_folio(self):
+        """Test PAGO:DE SUELDOS folio is not treated as amount."""
+        line = "19/12 PAGO:DE SUELDOS 0712345678 CENTRAL 4.264.803 5.710.911"
+        txn = parse_transaction_line(line, 2024)
+
+        assert txn is not None
+        assert "PAGO:DE SUELDOS" in txn.description
+        assert "0712345678" in txn.description  # Folio in description, not amount
+        assert txn.debit == Decimal("4264803")
+        assert txn.credit is None
+
     def test_transferencia_desde_linea_credito(self):
         """Test TRANSFERENCIA DESDE is treated as credit (ingreso)."""
         line = "20/11 TRANSFERENCIA DESDE LINEA DE CREDI CENTRAL 351 399.649"

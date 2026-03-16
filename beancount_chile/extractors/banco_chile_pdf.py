@@ -365,9 +365,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
     # Format: "PAGO:Devolucion 0764749650" or "PAGO:PROVEEDORES 0776016489"
     # The long number is the folio, not the amount
     if (
-        "PAGO:DEVOLUCION" in description.upper()
-        or "PAGO:DEVOLUCIÓN" in description.upper()
-        or "PAGO:PROVEEDORES" in description
+        description.upper().startswith("PAGO:")
         or "PAGO LINEA DE CRED" in description.upper()
     ):
         # Remove the folio number from numbers list

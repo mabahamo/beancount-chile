@@ -236,7 +236,7 @@ class TestParseTransactionLine:
         assert txn.debit is None
 
     def test_description_with_embedded_digits_single_amount(self):
-        """Test that digits embedded in alphanumeric tokens (e.g. B9) are not parsed as amounts."""
+        """Test digits in alphanumeric tokens (e.g. B9) aren't amounts."""
         line = "03/03 PAGO:SOMECLOUD B9 I CENTRAL 8.190"
         txn = parse_transaction_line(line, 2025)
 

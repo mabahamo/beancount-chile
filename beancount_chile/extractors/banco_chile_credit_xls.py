@@ -60,7 +60,7 @@ class BancoChileCreditTransaction:
     city: Optional[str] = None
 
     # Internacional-specific fields
-    country: Optional[str] = None              # e.g., "US", "GB"
+    country: Optional[str] = None  # e.g., "US", "GB"
     original_amount: Optional[Decimal] = None  # Amount in origin currency
 
 

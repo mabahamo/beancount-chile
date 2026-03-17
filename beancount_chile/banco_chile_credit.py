@@ -321,8 +321,16 @@ class BancoChileCreditImporter(Importer):
                 meta["category"] = transaction.category
         else:
             meta["statement_type"] = "no_facturado"
-            if transaction.city:
-                meta["city"] = transaction.city
+
+        # Add city metadata for any transaction that has it
+        if transaction.city:
+            meta["city"] = transaction.city
+
+        # Add international transaction metadata
+        if transaction.country:
+            meta["country"] = transaction.country
+        if transaction.original_amount is not None:
+            meta["original_amount"] = str(transaction.original_amount)
 
         # Add installments if present
         if transaction.installments:
@@ -342,6 +350,8 @@ class BancoChileCreditImporter(Importer):
             "category": transaction.category,
             "city": transaction.city,
             "card_type": transaction.card_type,
+            "country": transaction.country,
+            "original_amount": transaction.original_amount,
         }
 
         # Check for inter-account transfer first

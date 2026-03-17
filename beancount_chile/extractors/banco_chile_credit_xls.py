@@ -59,6 +59,10 @@ class BancoChileCreditTransaction:
     card_type: Optional[str] = None  # e.g., "Titular********1234"
     city: Optional[str] = None
 
+    # Internacional-specific fields
+    country: Optional[str] = None  # e.g., "US", "GB"
+    original_amount: Optional[Decimal] = None  # Amount in origin currency
+
 
 class BancoChileCreditXLSExtractor:
     """Extract transactions from Banco de Chile credit card XLS/XLSX files."""

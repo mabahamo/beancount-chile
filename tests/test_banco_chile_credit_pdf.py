@@ -168,6 +168,8 @@ class TestParseInternacionalTransactionLine:
         assert txn.date == datetime(2025, 5, 25)
         assert "www.tienda.com" in txn.description
         assert txn.amount == Decimal("100.00")
+        assert txn.country == "GB"
+        assert txn.original_amount == Decimal("93762.00")
 
     def test_us_dollar_transaction(self):
         line = (
@@ -180,6 +182,8 @@ class TestParseInternacionalTransactionLine:
         assert txn is not None
         assert txn.amount == Decimal("23.80")
         assert "SERVICIO CLOUD SPA" in txn.description
+        assert txn.country == "US"
+        assert txn.original_amount == Decimal("23.80")
 
     def test_payment_negative(self):
         line = "1806 ACV00000000000000000000 18/06/25 Pago Dolar TEF -100,00"
@@ -188,6 +192,8 @@ class TestParseInternacionalTransactionLine:
         assert txn is not None
         assert txn.amount == Decimal("-100.00")
         assert "Pago Dolar" in txn.description
+        assert txn.country is None
+        assert txn.original_amount is None
 
     def test_skip_header_lines(self):
         assert parse_internacional_transaction_line("NÚMERO REFERENCIA", 2025) is None
@@ -270,6 +276,8 @@ PAGAR HASTA 18/06/2025
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("150.00")
         assert "SOME STORE" in transactions[0].description
+        assert transactions[0].country == "US"
+        assert transactions[0].original_amount == Decimal("150.00")
 
 
 class TestBancoChileCreditImporterWithPDF:

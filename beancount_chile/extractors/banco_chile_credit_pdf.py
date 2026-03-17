@@ -334,9 +334,16 @@ def parse_internacional_transaction_line(
     description = remaining.strip()
 
     # Try to extract country code from end of description
+    country = None
     country_match = re.search(r"\s+([A-Z]{2})\s*$", description)
     if country_match:
+        country = country_match.group(1)
         description = description[: country_match.start()].strip()
+
+    # When there are 2 amounts, the first is the original currency amount
+    original_amount = None
+    if len(amounts) == 2:
+        original_amount = parse_usd_amount(amounts[0])
 
     return BancoChileCreditTransaction(
         date=date,
@@ -344,6 +351,8 @@ def parse_internacional_transaction_line(
         amount=usd_amount,
         installments=None,
         category=None,
+        country=country,
+        original_amount=original_amount,
     )
 
 

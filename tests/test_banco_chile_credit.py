@@ -296,7 +296,7 @@ class TestBancoChileCreditImporter:
             assert len(txn.postings) == 1
             assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
             assert txn.postings[0].units.currency == "CLP"
-            assert txn.postings[0].units.number > 0  # Credit card charges are positive
+            assert txn.postings[0].units.number < 0
             # Billed transactions should be cleared (*)
             assert txn.flag == "*"
             # Should have statement_type metadata
@@ -332,7 +332,7 @@ class TestBancoChileCreditImporter:
             assert len(txn.postings) == 1
             assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
             assert txn.postings[0].units.currency == "CLP"
-            assert txn.postings[0].units.number > 0  # Credit card charges are positive
+            assert txn.postings[0].units.number < 0
             # Unbilled transactions should be pending (!)
             assert txn.flag == "!"
             # Should have statement_type metadata
@@ -431,17 +431,17 @@ class TestBancoChileCreditImporter:
 
         def split_categorizer(date, payee, narration, amount, metadata):
             """Categorizer that splits credit card transactions."""
-            # Credit card amounts are positive, so we split them as negative
             # Split 70/30 between two categories
+            # Amounts are positive for expenses to balance the negative card posting
             return {
                 "postings": [
                     {
                         "category": "Expenses:Category1",
-                        "amount": -amount * Decimal("0.7"),
+                        "amount": amount * Decimal("0.7"),
                     },
                     {
                         "category": "Expenses:Category2",
-                        "amount": -amount * Decimal("0.3"),
+                        "amount": amount * Decimal("0.3"),
                     },
                 ]
             }
@@ -467,9 +467,9 @@ class TestBancoChileCreditImporter:
             cat1_amount = txn.postings[1].units.number
             cat2_amount = txn.postings[2].units.number
 
-            # Category1 should be 70% of the amount (negative)
+            # Category1 should be 70% of the absolute amount (positive expense)
             assert cat1_amount == -cc_amount * Decimal("0.7")
-            # Category2 should be 30% of the amount (negative)
+            # Category2 should be 30% of the absolute amount (positive expense)
             assert cat2_amount == -cc_amount * Decimal("0.3")
 
             # Total should balance to zero
@@ -515,11 +515,12 @@ class TestBancoChileCreditImporter:
         def multi_split_categorizer(date, payee, narration, amount, metadata):
             """Categorizer that splits into 3 categories."""
             # Split into 3 categories: 50%, 30%, 20%
+            # Amounts are positive for expenses to balance the negative card posting
             return {
                 "postings": [
-                    {"category": "Expenses:Cat1", "amount": -amount * Decimal("0.5")},
-                    {"category": "Expenses:Cat2", "amount": -amount * Decimal("0.3")},
-                    {"category": "Expenses:Cat3", "amount": -amount * Decimal("0.2")},
+                    {"category": "Expenses:Cat1", "amount": amount * Decimal("0.5")},
+                    {"category": "Expenses:Cat2", "amount": amount * Decimal("0.3")},
+                    {"category": "Expenses:Cat3", "amount": amount * Decimal("0.2")},
                 ]
             }
 
@@ -579,17 +580,17 @@ class TestBancoChileCreditImporter:
 
         def subaccount_split_categorizer(date, payee, narration, amount, metadata):
             """Return dict with subaccount and split postings."""
-            # Credit card amounts are positive, so split amounts should be negative
+            # Amounts are positive for expenses to balance the negative card posting
             return {
                 "subaccount": "Business",
                 "postings": [
                     {
                         "category": "Expenses:Office",
-                        "amount": -amount * Decimal("0.7"),
+                        "amount": amount * Decimal("0.7"),
                     },
                     {
                         "category": "Expenses:Software",
-                        "amount": -amount * Decimal("0.3"),
+                        "amount": amount * Decimal("0.3"),
                     },
                 ],
             }

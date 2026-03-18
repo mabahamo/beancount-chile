@@ -304,7 +304,7 @@ class BancoChileCreditImporter(Importer):
         Returns:
             Tuple of (transaction entry, list of Document entries for receipts)
         """
-        # Credit card charges are positive (increase liability)
+        # Raw amount from statement (positive for charges, negative for payments)
         txn_amount = D(str(transaction.amount))
 
         # Extract payee and narration (defaults)
@@ -420,10 +420,12 @@ class BancoChileCreditImporter(Importer):
             account_name = f"{self.account_name}:{subaccount_suffix}"
 
         # Prepare postings list with the (possibly modified) account name
+        # Negate amount for the card account: charges increase liability (negative),
+        # payments decrease liability (positive)
         postings = [
             data.Posting(
                 account=account_name,
-                units=amount.Amount(txn_amount, self.currency),
+                units=amount.Amount(-txn_amount, self.currency),
                 cost=None,
                 price=None,
                 flag=None,
@@ -450,7 +452,7 @@ class BancoChileCreditImporter(Importer):
             postings.append(
                 data.Posting(
                     account=category_account,
-                    units=amount.Amount(-txn_amount, self.currency),
+                    units=amount.Amount(txn_amount, self.currency),
                     cost=None,
                     price=None,
                     flag=None,

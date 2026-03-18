@@ -296,7 +296,7 @@ class TestBancoChileCreditImporter:
             assert len(txn.postings) == 1
             assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
             assert txn.postings[0].units.currency == "CLP"
-            assert txn.postings[0].units.number < 0  # Credit card charges increase liability (negative)
+            assert txn.postings[0].units.number < 0
             # Billed transactions should be cleared (*)
             assert txn.flag == "*"
             # Should have statement_type metadata
@@ -332,7 +332,7 @@ class TestBancoChileCreditImporter:
             assert len(txn.postings) == 1
             assert txn.postings[0].account == "Liabilities:CreditCard:BancoChile"
             assert txn.postings[0].units.currency == "CLP"
-            assert txn.postings[0].units.number < 0  # Credit card charges increase liability (negative)
+            assert txn.postings[0].units.number < 0
             # Unbilled transactions should be pending (!)
             assert txn.flag == "!"
             # Should have statement_type metadata

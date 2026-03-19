@@ -34,6 +34,7 @@ class BancoChileTransaction:
     debit: Optional[Decimal]
     credit: Optional[Decimal]
     balance: Decimal
+    document_number: Optional[str] = None
 
 
 class BancoChileXLSExtractor:

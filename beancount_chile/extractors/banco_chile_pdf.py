@@ -350,6 +350,12 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
     # Remove date from line
     rest = line[match.end() :].strip()
 
+    # Extract document number (N°XXXXX) before stripping it for amount parsing.
+    document_number = None
+    doc_match = re.search(r"N°(\d+)", rest)
+    if doc_match:
+        document_number = doc_match.group(1)
+
     # Remove reference numbers like "N°32323877" before extracting amounts.
     # These are document/transaction IDs, not monetary values.
     rest_for_numbers = re.sub(r"N°\d+", "", rest)
@@ -442,6 +448,7 @@ def parse_transaction_line(line: str, year: int) -> Optional[BancoChileTransacti
         debit=debit,
         credit=credit,
         balance=balance,
+        document_number=document_number,
     )
 
 

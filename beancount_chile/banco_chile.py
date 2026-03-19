@@ -297,6 +297,8 @@ class BancoChileImporter(Importer):
         # Add channel information to metadata
         meta = data.new_metadata(str(filepath), 0)
         meta["channel"] = transaction.channel
+        if transaction.document_number is not None:
+            meta["document_number"] = transaction.document_number
 
         # Prepare metadata for categorizer
         categorizer_metadata = {
@@ -304,6 +306,7 @@ class BancoChileImporter(Importer):
             "debit": transaction.debit,
             "credit": transaction.credit,
             "balance": transaction.balance,
+            "document_number": transaction.document_number,
         }
 
         # Check for inter-account transfer first

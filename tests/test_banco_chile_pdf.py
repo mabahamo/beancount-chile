@@ -294,6 +294,24 @@ class TestParseTransactionLine:
         assert parse_transaction_line("", 2025) is None
         assert parse_transaction_line("   ", 2025) is None
 
+    def test_document_number_extracted(self):
+        """Test that N°XXXXX is captured as document_number."""
+        line = "15/03 SRV CPRA USD BANCHILE N°99887766 INTERNET 50.000 1.200.000"
+        txn = parse_transaction_line(line, 2025)
+
+        assert txn is not None
+        assert txn.document_number == "99887766"
+        assert txn.debit == Decimal("50000")
+        assert txn.balance == Decimal("1200000")
+
+    def test_no_document_number(self):
+        """Test that document_number is None when no N° is present."""
+        line = "10/01 TRASPASO A:TEST USUARIO CUATRO INTERNET 3.147.734 12.100.583"
+        txn = parse_transaction_line(line, 2025)
+
+        assert txn is not None
+        assert txn.document_number is None
+
 
 class TestBancoChilePDFExtractor:
     """Test the PDF extractor with mocked pdfplumber."""

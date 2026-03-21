@@ -435,3 +435,38 @@ MONEDA : US DOLLAR
         txn_entries = [e for e in entries if isinstance(e, data.Transaction)]
         assert len(txn_entries) == 1
         assert txn_entries[0].meta["document_number"] == "12345678"
+
+    @patch("beancount_chile.extractors.banco_chile_foreign_pdf.pdfplumber.open")
+    def test_filename_includes_currency(self, mock_pdfplumber):
+        """Test that filename includes currency for foreign accounts."""
+        page_text = """SR(A)(ES)
+Juan Perez Gonzalez
+juan@example.com
+
+N° DE CUENTA : 59012345678
+CARTOLA N° : 1
+DESDE : 01/07/2025 HASTA : 01/07/2025
+MONEDA : US DOLLAR
+
+01/07 SALDO INICIAL 0,00
+03/06 SRV CPRA USD BANCHILE N°12345678 INTERNET 100,00
+01/07 SALDO FINAL 100,00"""
+
+        mock_page = MagicMock()
+        mock_page.extract_text.return_value = page_text
+
+        mock_pdf = MagicMock()
+        mock_pdf.pages = [mock_page]
+        mock_pdf.__enter__.return_value = mock_pdf
+        mock_pdf.__exit__.return_value = None
+
+        mock_pdfplumber.return_value = mock_pdf
+
+        importer = BancoChileImporter(
+            account_number="59012345678",
+            account_name="Assets:BancoChile:USD",
+            currency="USD",
+        )
+
+        filename = importer.filename(Path("fake.pdf"))
+        assert filename == "2025-07-01_banco_chile_usd_59012345678.pdf"

@@ -212,6 +212,9 @@ class BancoChileImporter(Importer):
             date_str = metadata.statement_date.strftime("%Y-%m-%d")
             ext = filepath.suffix.lower()
             account_clean = self.account_number.replace("-", "")
+            if self.currency != "CLP":
+                currency_lower = self.currency.lower()
+                return f"{date_str}_banco_chile_{currency_lower}_{account_clean}{ext}"
             return f"{date_str}_banco_chile_{account_clean}{ext}"
         except Exception:
             return None

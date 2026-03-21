@@ -13,6 +13,9 @@ from beancount.core import amount, data, flags
 from beancount.core.number import D
 from beangulp import Importer
 
+from beancount_chile.extractors.banco_chile_foreign_pdf import (
+    BancoChileForeignPDFExtractor,
+)
 from beancount_chile.extractors.banco_chile_pdf import BancoChilePDFExtractor
 from beancount_chile.extractors.banco_chile_xls import (
     BancoChileTransaction,
@@ -97,12 +100,19 @@ class BancoChileImporter(Importer):
         self.transfer_account = transfer_account
         self.xls_extractor = BancoChileXLSExtractor()
         self.pdf_extractor = BancoChilePDFExtractor()
+        self.foreign_pdf_extractor = BancoChileForeignPDFExtractor()
 
     def _get_extractor(
         self, filepath: Path
-    ) -> Optional[Union[BancoChileXLSExtractor, BancoChilePDFExtractor]]:
+    ) -> Optional[
+        Union[
+            BancoChileXLSExtractor,
+            BancoChilePDFExtractor,
+            BancoChileForeignPDFExtractor,
+        ]
+    ]:
         """
-        Get the appropriate extractor based on file extension.
+        Get the appropriate extractor based on file extension and currency.
 
         Args:
             filepath: Path to the file
@@ -117,6 +127,8 @@ class BancoChileImporter(Importer):
         if suffix in [".xls", ".xlsx"]:
             return self.xls_extractor
         elif suffix == ".pdf":
+            if self.currency != "CLP":
+                return self.foreign_pdf_extractor
             return self.pdf_extractor
         else:
             return None
